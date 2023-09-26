@@ -1,6 +1,7 @@
 import random
 import math
 import pygame
+import pprint
 
 pygame.init()
 display_size = (400, 500)
@@ -11,14 +12,6 @@ mouse = [False, False]
 gravity = 3
 clock = pygame.time.Clock()
 dt = 0
-terrain = []
-
-terrain_height = 300
-min_length = 10
-max_length = 100
-max_delta_angle = 1
-min_angle = -1.5
-max_angle = 1.5
 
 class Astronaut:
     def __init__(self):
@@ -54,24 +47,63 @@ class Astronaut:
             self.vy -= self.y_thrust
             self.vx -= self.x_thrust
 
+class Terrain:
+    def __init__(self, terrain_height, min_length, max_length, min_angle, max_angle, max_delta_angle):
+        self.vectors = [pygame.Vector2(10, 0)]
+
+        self.terrain_height = terrain_height
+        self.min_length = min_length
+        self.max_length = max_length
+        self.max_delta_angle = max_delta_angle
+        self.min_angle = min_angle
+        self.max_angle = max_angle
+
+        self.generate_terrain()
+
+    def generate_terrain(self):
+        vector = self.vectors[len(self.vectors) - 1]
+        x = 0
+
+        while x < display_size[0]:
+            vector = self.new_vector(vector)
+            self.vectors.append(vector)
+            x += vector.x
+
+    def new_vector(self, last_vector):
+        angle = random_float(-self.max_delta_angle, self.max_delta_angle)
+        new_angle = math.atan(last_vector.y / last_vector.x) + angle
+
+        rotate_angle = angle
+        if new_angle < self.min_angle or new_angle > self.max_angle:
+            rotate_angle = -angle
+
+        new_length = random_float(self.max_length, self.min_length)
+    
+        new_vector = last_vector.rotate_rad(rotate_angle)
+        new_vector.scale_to_length(new_length)
+
+        return new_vector
+    
+    
+    def draw(self):
+        x1 = 0
+        y1 = self.terrain_height
+
+        for vector in self.vectors:
+            x2 = x1 + vector.x
+            y2 = y1 + vector.y
+
+            pygame.draw.lines(screen, 'white', False, [(x1, y2), (x2, y2)])
+
+            x1 = x2
+            y1 = y2
+
+
+
 def random_float(max, min):
     return random.random() * (max - min) + min
 
-def generate_terrain():
-    vector = terrain[len(terrain) - 1]
-
-    while vector[0] < display_size[0]:
-        vector, angle = generate_vector(vector, angle)
-        terrain.append(vector)
-        print(vector)
-
-def generate_vector(last_vector):
-    random_angle = random_float(-max_delta_angle, max_delta_angle)
-    new_length = random_float(max_length, min_length)
-
-    return new_vector
-
-generate_terrain()
+terrain = Terrain(300, 10, 100, -1.5, 1.5, 0.5)
 astronaut = Astronaut()
  
 running = True
@@ -89,6 +121,6 @@ while running:
     astronaut.update()
     astronaut.draw()
 
-    pygame.draw.lines(screen, 'white', False, terrain)
+    terrain.draw()
 
     pygame.display.flip()
