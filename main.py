@@ -54,9 +54,11 @@ class Astronaut:
 class Terrain:
     def __init__(self):
         self.vectors = [pygame.Vector2(10, 0)]
-        self.draw_start = 0
+        
+        self.start_x = 0
+        self.end_x = 0
+        self.start_y = 300
 
-        self.terrain_height = 300
         self.min_length = 10
         self.max_length = 50
         self.min_angle = -1.5
@@ -67,12 +69,14 @@ class Terrain:
 
     def generate_terrain(self):
         vector = self.vectors[len(self.vectors) - 1]
-        x = 0
+        x = self.end_x
 
-        while x < display_size[0]:
+        while x < game_window.x + display_size[0]:
             vector = self.new_vector(vector)
             self.vectors.append(vector)
             x += vector.x
+
+        self.end_x = x
 
     def new_vector(self, last_vector):
         angle = random_float(-self.max_delta_angle, self.max_delta_angle)
@@ -90,25 +94,31 @@ class Terrain:
         return new_vector
     
     def remove_vectors(self):
-        if self.vectors[1].x < game_window.x:
-            self.draw_start = self.draw_start + self.vectors[0].x
+        if self.start_x + self.vectors[0].x < game_window.x:
+            self.start_x = self.start_x + self.vectors[0].x
+            self.start_y = self.start_y + self.vectors[0].y
+
             self.vectors.pop(0)
 
-            last_vector = self.vectors[-1]
-            self.vectors.append(self.new_vector(last_vector))
+    def add_vectors(self):
+        if self.end_x < game_window.x + display_size[0]:
+            self.generate_terrain()
     
     
     def draw(self):
-        # self.remove_vectors()
+        self.remove_vectors()
+        self.add_vectors()
 
-        x1 = self.draw_start - game_window.x
-        y1 = self.terrain_height
+        x1 = self.start_x
+        y1 = self.start_y
 
         for vector in self.vectors:
             x2 = x1 + vector.x
             y2 = y1 + vector.y
 
-            pygame.draw.lines(screen, 'white', False, [(x1 - game_window.x, y1), (x2 - game_window.x, y2)])
+            point1 = (x1 - game_window.x, y1 + game_window.y)
+            point2 = (x2 - game_window.x, y2 + game_window.y)
+            pygame.draw.lines(screen, 'white', False, [point1, point2])
 
             x1 = x2
             y1 = y2
@@ -151,6 +161,5 @@ while running:
 
     terrain.draw()
 
-    game_window.x += 1
 
     pygame.display.flip()
