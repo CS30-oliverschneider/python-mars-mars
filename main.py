@@ -4,7 +4,7 @@ import pygame
 import pprint
 
 pygame.init()
-display_size = (400, 500)
+display_size = (900, 900)
 screen = pygame.display.set_mode(display_size)
 pygame.display.set_caption('Mars Mars')
 
@@ -27,7 +27,7 @@ class Astronaut:
         self.y_thrust = 5
 
     def draw(self):
-        pygame.draw.rect(screen, 'white', (self.x, self.y, self.w, self.h))
+        pygame.draw.rect(screen, 'white', (self.x - game_window.x, self.y, self.w, self.h))
 
     def update(self):
         self.update_velocity()
@@ -47,16 +47,21 @@ class Astronaut:
             self.vy -= self.y_thrust
             self.vx -= self.x_thrust
 
-class Terrain:
-    def __init__(self, terrain_height, min_length, max_length, min_angle, max_angle, max_delta_angle):
-        self.vectors = [pygame.Vector2(10, 0)]
+    def check_collision(self):
+        check_vectors = []
+        start_index = math.floor(self.x / terrain.max_length)
 
-        self.terrain_height = terrain_height
-        self.min_length = min_length
-        self.max_length = max_length
-        self.max_delta_angle = max_delta_angle
-        self.min_angle = min_angle
-        self.max_angle = max_angle
+class Terrain:
+    def __init__(self):
+        self.vectors = [pygame.Vector2(10, 0)]
+        self.draw_start = 0
+
+        self.terrain_height = 300
+        self.min_length = 10
+        self.max_length = 50
+        self.min_angle = -1.5
+        self.max_angle = 1.5
+        self.max_delta_angle = 0.5
 
         self.generate_terrain()
 
@@ -84,33 +89,56 @@ class Terrain:
 
         return new_vector
     
+    def remove_vectors(self):
+        if self.vectors[1].x < game_window.x:
+            self.draw_start = self.draw_start + self.vectors[0].x
+            self.vectors.pop(0)
+
+            last_vector = self.vectors[-1]
+            self.vectors.append(self.new_vector(last_vector))
+    
     
     def draw(self):
-        x1 = 0
+        # self.remove_vectors()
+
+        x1 = self.draw_start - game_window.x
         y1 = self.terrain_height
 
         for vector in self.vectors:
             x2 = x1 + vector.x
             y2 = y1 + vector.y
 
-            pygame.draw.lines(screen, 'white', False, [(x1, y2), (x2, y2)])
+            pygame.draw.lines(screen, 'white', False, [(x1 - game_window.x, y1), (x2 - game_window.x, y2)])
 
             x1 = x2
             y1 = y2
 
+class GameWindow:
+    def __init__(self):
+        self.x = 0
+        self.y = 0
 
 
 def random_float(max, min):
     return random.random() * (max - min) + min
 
-terrain = Terrain(300, 10, 100, -1.5, 1.5, 0.5)
-astronaut = Astronaut()
- 
+def setup():
+    global game_window
+    global terrain
+    global astronaut
+
+    game_window = GameWindow()
+    terrain = Terrain()
+    astronaut = Astronaut()
+
+setup()
 running = True
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
+            setup()
 
     screen.fill('black')
     dt = clock.tick(60) / 1000
@@ -122,5 +150,7 @@ while running:
     astronaut.draw()
 
     terrain.draw()
+
+    game_window.x += 1
 
     pygame.display.flip()
