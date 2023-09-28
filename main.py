@@ -27,11 +27,12 @@ class Astronaut:
         self.y_thrust = 5
 
     def draw(self):
-        pygame.draw.rect(screen, 'white', (self.x - game_window.x, self.y, self.w, self.h))
+        pygame.draw.rect(screen, 'white', (self.x - game_window.x, self.y - game_window.y, self.w, self.h))
 
     def update(self):
         self.update_velocity()
         self.move()
+        self.check_collision()
 
     def move(self):
         self.x += self.vx * dt
@@ -51,6 +52,25 @@ class Astronaut:
         check_vectors = []
         start_index = math.floor(self.x / terrain.max_length)
 
+        x = terrain.vectors[start_index].x
+        index = start_index
+
+        while x < self.x + self.w:
+            vector = terrain.vectors[index]
+            x += vector.x
+            index += 1
+
+            if x > self.x:
+                check_vectors.append(vector)
+
+                if index % 2 == 0:
+                    terrain.colors[vector.x] = 'red'
+                else:
+                    terrain.colors[vector.x] = 'orange'
+
+        # for n in range(1, 5):
+        #     terrain.colors[terrain.vectors[start_index - n].x] = 'white'
+
 class Terrain:
     def __init__(self):
         self.vectors = [pygame.Vector2(10, 0)]
@@ -61,9 +81,11 @@ class Terrain:
 
         self.min_length = 10
         self.max_length = 50
-        self.min_angle = -1.5
-        self.max_angle = 1.5
+        self.min_angle = -1
+        self.max_angle = 1
         self.max_delta_angle = 0.5
+
+        self.colors = {10.0: 'white'}
 
         self.generate_terrain()
 
@@ -74,6 +96,7 @@ class Terrain:
         while x < game_window.x + display_size[0]:
             vector = self.new_vector(vector)
             self.vectors.append(vector)
+            self.colors[vector.x] = 'white'
             x += vector.x
 
         self.end_x = x
@@ -116,9 +139,9 @@ class Terrain:
             x2 = x1 + vector.x
             y2 = y1 + vector.y
 
-            point1 = (x1 - game_window.x, y1 + game_window.y)
-            point2 = (x2 - game_window.x, y2 + game_window.y)
-            pygame.draw.lines(screen, 'white', False, [point1, point2])
+            point1 = (x1 - game_window.x, y1 - game_window.y)
+            point2 = (x2 - game_window.x, y2 - game_window.y)
+            pygame.draw.lines(screen, self.colors.get(vector.x), False, [point1, point2])
 
             x1 = x2
             y1 = y2
@@ -127,6 +150,10 @@ class GameWindow:
     def __init__(self):
         self.x = 0
         self.y = 0
+
+    def update(self):
+        self.x += astronaut.vx * dt
+        self.y += astronaut.vy * dt
 
 
 def random_float(max, min):
@@ -157,8 +184,9 @@ while running:
     mouse = (pressed[0], pressed[2])
 
     astronaut.update()
-    astronaut.draw()
+    # game_window.update()
 
+    astronaut.draw()
     terrain.draw()
 
 
