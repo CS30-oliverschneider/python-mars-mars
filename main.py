@@ -50,34 +50,21 @@ class Astronaut:
 
     def check_collision(self):
         check_vectors = []
-        start_index = math.floor(self.x / terrain.max_length)
 
-        x = terrain.vectors[start_index].x
-        index = start_index
+        start_index = max(math.floor((self.x - game_window.x) / terrain.max_length - 1), 0)
+        print(start_index)
 
-        while x < self.x + self.w:
-            vector = terrain.vectors[index]
-            x += vector.x
-            index += 1
+        # while x < self.x + self.w:
+        #     vector = terrain.lines[index]
+        #     x += vector.x
+        #     index += 1
 
-            if x > self.x:
-                check_vectors.append(vector)
-
-                if index % 2 == 0:
-                    terrain.colors[vector.x] = 'red'
-                else:
-                    terrain.colors[vector.x] = 'orange'
-
-        # for n in range(1, 5):
-        #     terrain.colors[terrain.vectors[start_index - n].x] = 'white'
+        #     if x > self.x:
+        #         check_vectors.append(vector)
 
 class Terrain:
     def __init__(self):
-        self.vectors = [pygame.Vector2(10, 0)]
-        
-        self.start_x = 0
-        self.end_x = 0
-        self.start_y = 300
+        self.lines = [Line(0, 700, 0, 0)]
 
         self.min_length = 10
         self.max_length = 50
@@ -85,46 +72,36 @@ class Terrain:
         self.max_angle = 1
         self.max_delta_angle = 0.5
 
-        self.colors = {10.0: 'white'}
-
         self.generate_terrain()
 
     def generate_terrain(self):
-        vector = self.vectors[len(self.vectors) - 1]
-        x = self.end_x
+        line = self.lines[-1]
+        x = self.lines[-1].x2
 
         while x < game_window.x + display_size[0]:
-            vector = self.new_vector(vector)
-            self.vectors.append(vector)
-            self.colors[vector.x] = 'white'
-            x += vector.x
+            line = self.new_line()
+            self.lines.append(line)
+            x += line.dx
 
-        self.end_x = x
+    def new_line(self):
+        last_line = self.lines[-1]
 
-    def new_vector(self, last_vector):
-        angle = random_float(-self.max_delta_angle, self.max_delta_angle)
-        new_angle = math.atan(last_vector.y / last_vector.x) + angle
+        delta_angle = random_float(-self.max_delta_angle, self.max_delta_angle)
+        new_angle = last_line.angle + delta_angle
 
-        rotate_angle = angle
         if new_angle < self.min_angle or new_angle > self.max_angle:
-            rotate_angle = -angle
+            new_angle = last_line.angle - delta_angle
 
         new_length = random_float(self.max_length, self.min_length)
-    
-        new_vector = last_vector.rotate_rad(rotate_angle)
-        new_vector.scale_to_length(new_length)
 
-        return new_vector
+        return Line(last_line.x2, last_line.y2, new_length, new_angle)
     
     def remove_vectors(self):
-        if self.start_x + self.vectors[0].x < game_window.x:
-            self.start_x = self.start_x + self.vectors[0].x
-            self.start_y = self.start_y + self.vectors[0].y
-
-            self.vectors.pop(0)
+        if self.lines[0].x2 < game_window.x:
+            self.lines.pop(0)
 
     def add_vectors(self):
-        if self.end_x < game_window.x + display_size[0]:
+        if self.lines[-1].x2 < game_window.x + display_size[0]:
             self.generate_terrain()
     
     
@@ -132,19 +109,28 @@ class Terrain:
         self.remove_vectors()
         self.add_vectors()
 
-        x1 = self.start_x
-        y1 = self.start_y
+        for line in self.lines:
+            line.draw()
 
-        for vector in self.vectors:
-            x2 = x1 + vector.x
-            y2 = y1 + vector.y
+class Line:
+    def __init__(self, x1, y1, length, angle):
+        self.x1 = x1
+        self.y1 = y1
+        self.length = length
+        self.angle = angle
 
-            point1 = (x1 - game_window.x, y1 - game_window.y)
-            point2 = (x2 - game_window.x, y2 - game_window.y)
-            pygame.draw.lines(screen, self.colors.get(vector.x), False, [point1, point2])
+        self.y2 = y1 + length * math.sin(angle)
+        self.x2 = x1 + length * math.cos(angle)
+        self.dx = self.x2 - self.x1
 
-            x1 = x2
-            y1 = y2
+        self.p1 = (self.x1, self.y1)
+        self.p2 = (self.x2, self.y2)
+
+        self.color = 'white'
+
+    def draw(self):
+        pygame.draw.line(screen, self.color, self.p1, self.p2)
+
 
 class GameWindow:
     def __init__(self):
