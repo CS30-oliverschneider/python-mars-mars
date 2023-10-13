@@ -49,18 +49,23 @@ class Astronaut:
             self.vx -= self.x_thrust
 
     def check_collision(self):
-        check_vectors = []
+        check_lines = []
 
-        start_index = max(math.floor((self.x - game_window.x) / terrain.max_length - 1), 0)
-        print(start_index)
+        index = max(math.floor((self.x - game_window.x) / terrain.max_length - 1), 0)
+        line = terrain.lines[index]
 
-        # while x < self.x + self.w:
-        #     vector = terrain.lines[index]
-        #     x += vector.x
-        #     index += 1
+        while line.x1 < self.x + self.w:
+            if line.x2 > self.x:
+                check_lines.append(line)
+                line.color = 'red'
 
-        #     if x > self.x:
-        #         check_vectors.append(vector)
+            index += 1
+            line = terrain.lines[index]
+            line.color = 'white'
+
+        
+        if highest_point < self.y:
+            setup()
 
 class Terrain:
     def __init__(self):
