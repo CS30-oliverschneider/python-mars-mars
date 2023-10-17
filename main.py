@@ -57,14 +57,17 @@ class Astronaut:
         while line.x1 < self.x + self.w:
             if line.x2 > self.x:
                 check_lines.append(line)
-                line.color = 'red'
-
             index += 1
             line = terrain.lines[index]
+
+        for line in terrain.lines:
             line.color = 'white'
 
-        
-        if highest_point < self.y:
+        for line in check_lines:
+            line.color = 'red'
+
+        highest_line = min(check_lines, key = lambda line: min(line.y1, line.y2))
+        if highest_line.getY(self.x) < self.y + self.h or highest_line.getY(self.x + self.w) < self.y + self.h:
             setup()
 
 class Terrain:
@@ -132,6 +135,12 @@ class Line:
         self.p2 = (self.x2, self.y2)
 
         self.color = 'white'
+
+    def getY(self, x):
+        if x < self.x1 or x > self.x2:
+            return float('inf')
+        else:
+            return ((self.y2 - self.y1) / (self.x2 - self.x1)) * (x - self.x1) + self.y1
 
     def draw(self):
         pygame.draw.line(screen, self.color, self.p1, self.p2)
