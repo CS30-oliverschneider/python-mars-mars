@@ -1,5 +1,6 @@
 import random
 import math
+from typing import Any
 import pygame
 import pprint
 
@@ -8,6 +9,8 @@ display_size = (900, 900)
 screen = pygame.display.set_mode(display_size)
 pygame.display.set_caption('Mars Mars')
 
+game_objects = []
+boxes = []
 mouse = [False, False]
 gravity = 3
 clock = pygame.time.Clock()
@@ -19,6 +22,8 @@ class Astronaut:
         self.y = 100
         self.w = 50
         self.h = 50
+
+        self.box = BoundingBox(self, 0, 0, self.w, self.h)
 
         self.vx = 0
         self.vy = 0
@@ -32,7 +37,8 @@ class Astronaut:
     def update(self):
         self.update_velocity()
         self.move()
-        self.check_collision()
+        self.check_object_collision()
+        self.check_terrain_collision()
 
     def move(self):
         self.x += self.vx * dt
@@ -48,7 +54,14 @@ class Astronaut:
             self.vy -= self.y_thrust
             self.vx -= self.x_thrust
 
-    def check_collision(self):
+    def check_object_collision(self):
+        for game_object in game_objects:
+            box_collision(self.box, game_object.box)
+
+    def check_terrain_collision(self):
+        if terrain.highest > self.y + self.h:
+            return
+        
         check_lines = []
 
         index = max(math.floor((self.x - game_window.x) / terrain.max_length - 1), 0)
@@ -67,12 +80,66 @@ class Astronaut:
             line.color = 'red'
 
         highest_line = min(check_lines, key = lambda line: min(line.y1, line.y2))
-        if highest_line.getY(self.x) < self.y + self.h or highest_line.getY(self.x + self.w) < self.y + self.h:
+
+        highest_point = min(highest_line.y1, highest_line.y2)
+        if highest_point > self.y + self.h:
+            return
+        
+        left_below = highest_line.getY(self.x) < self.y + self.h
+        right_below = highest_line.getY(self.x + self.w) < self.y + self.h
+        if left_below or right_below:
             setup()
+
+
+class Platform:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.w = 50
+        self.h = 10
+
+        self.box = BoundingBox(self, 0, 0, self.w, self.h)
+
+    def resolve_collision(self, box):
+        box.y = self.box.y - box.h
+
+    def draw(self):
+        pygame.draw.rect(screen, 'green', (self.x - game_window.x, self.y - game_window.y, self.w, self.h))
+
+class BoundingBox:
+    def __init__(self, parent, relative_x, relative_y, w, h):
+        self.parent = parent
+
+        self.relative_x = relative_x
+        self.relative_y = relative_y
+        self.w = w
+        self.h = h
+
+        boxes.append(self)
+    
+    def __setattr__(self, name, value):
+        if name == 'x':
+            self.parent.x += value - self.x
+        elif name == 'y':
+            self.parent.y += value - self.y
+        else:
+            super().__setattr__(name, value)
+
+    def __getattribute__(self, name):
+        if name == 'x':
+            return self.parent.x + self.relative_x
+        elif name == 'y':
+            return self.parent.y + self.relative_y
+        else:
+            return super().__getattribute__(name)
+    
+    def draw(self):
+        pygame.draw.rect(screen, 'red', (self.x - game_window.x, self.y - game_window.y, self.w, self.h), 1)
 
 class Terrain:
     def __init__(self):
         self.lines = [Line(0, 700, 0, 0)]
+        self.highest = float('inf')
 
         self.min_length = 10
         self.max_length = 50
@@ -90,6 +157,10 @@ class Terrain:
             line = self.new_line()
             self.lines.append(line)
             x += line.dx
+
+            highest = min(line.y1, line.y2)
+            if highest < self.highest:
+                self.highest = highest
 
     def new_line(self):
         last_line = self.lines[-1]
@@ -131,9 +202,6 @@ class Line:
         self.x2 = x1 + length * math.cos(angle)
         self.dx = self.x2 - self.x1
 
-        self.p1 = (self.x1, self.y1)
-        self.p2 = (self.x2, self.y2)
-
         self.color = 'white'
 
     def getY(self, x):
@@ -143,7 +211,9 @@ class Line:
             return ((self.y2 - self.y1) / (self.x2 - self.x1)) * (x - self.x1) + self.y1
 
     def draw(self):
-        pygame.draw.line(screen, self.color, self.p1, self.p2)
+        p1 = (self.x1 - game_window.x, self.y1 - game_window.y)
+        p2 = (self.x2 - game_window.x, self.y2 - game_window.y)
+        pygame.draw.line(screen, self.color, p1, p2)
 
 
 class GameWindow:
@@ -155,6 +225,11 @@ class GameWindow:
         self.x += astronaut.vx * dt
         self.y += astronaut.vy * dt
 
+def box_collision(box1, box2):
+    check_x = box1.x + box1.w > box2.x and box1.x < box2.x + box2.w
+    check_y = box1.y + box1.h > box2.y and box1.y < box2.y + box2.h
+    if check_x and check_y:
+        box2.parent.resolve_collision(box1)
 
 def random_float(max, min):
     return random.random() * (max - min) + min
@@ -163,7 +238,11 @@ def setup():
     global game_window
     global terrain
     global astronaut
+    global game_objects
+    global boxes
 
+    boxes = []
+    game_objects = [Platform(100, 400)]
     game_window = GameWindow()
     terrain = Terrain()
     astronaut = Astronaut()
@@ -184,10 +263,14 @@ while running:
     mouse = (pressed[0], pressed[2])
 
     astronaut.update()
-    # game_window.update()
+    game_window.update()
 
-    astronaut.draw()
     terrain.draw()
+    for game_object in game_objects:
+        game_object.draw()
+    astronaut.draw()
 
+    for box in boxes:
+        box.draw()
 
     pygame.display.flip()
