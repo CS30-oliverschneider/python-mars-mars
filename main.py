@@ -102,6 +102,8 @@ class Platform:
 
     def resolve_collision(self, box):
         box.y = self.box.y - box.h
+        box.parent.vy = 0
+        box.parent.vx = 0
 
     def draw(self):
         pygame.draw.rect(screen, 'green', (self.x - game_window.x, self.y - game_window.y, self.w, self.h))
