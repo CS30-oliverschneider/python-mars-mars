@@ -2,21 +2,14 @@ import random
 import math
 from typing import Any
 import pygame
-import pprint
+from gui_elements import add_gui_elements
 
 pygame.init()
 display_size = (900, 900)
 screen = pygame.display.set_mode(display_size)
 pygame.display.set_caption('Mars Mars')
 
-game_objects = []
-boxes = []
-mouse = [False, False]
-gravity = 3
-clock = pygame.time.Clock()
-dt = 0
-
-class Astronaut:
+class Player:
     def __init__(self):
         self.x = 100
         self.y = 100
@@ -30,6 +23,8 @@ class Astronaut:
 
         self.x_thrust = 2
         self.y_thrust = 5
+
+        self.max_landing_speed = 150
 
     def draw(self):
         pygame.draw.rect(screen, 'white', (self.x - game_window.x, self.y - game_window.y, self.w, self.h))
@@ -100,10 +95,13 @@ class Platform:
 
         self.box = BoundingBox(self, 0, 0, self.w, self.h)
 
-    def resolve_collision(self, box):
-        box.y = self.box.y - box.h
-        box.parent.vy = 0
-        box.parent.vx = 0
+    def resolve_collision(self):
+        if player.vy < player.max_landing_speed:
+            player.box.y = self.box.y - player.box.h
+            player.vy = 0
+            player.vx = 0
+        else:
+            setup()
 
     def draw(self):
         pygame.draw.rect(screen, 'green', (self.x - game_window.x, self.y - game_window.y, self.w, self.h))
@@ -224,32 +222,66 @@ class GameWindow:
         self.y = 0
 
     def update(self):
-        self.x += astronaut.vx * dt
-        self.y += astronaut.vy * dt
+        self.x += player.vx * dt
+        self.y += player.vy * dt
+
+class GUI:
+    def __init__(self):
+        self.fuel = FuelGUI()
+
+        self.elements = [self.fuel]
+
+    def draw(self):
+        for element in self.elements:
+            element.draw()
+
+    def update(self):
+        for element in self.elements:
+            element.update()
+
+class FuelGUI:
+    def __init__(self):
+        self.x = 0
+        self.y = 0
+        self.img = pygame.image.load('./img/fuel.png')
+
+    def draw(self):
+        screen.blit(self.img, (self.x, self.y))
+
+    def update(self):
+        pass
 
 def box_collision(box1, box2):
     check_x = box1.x + box1.w > box2.x and box1.x < box2.x + box2.w
     check_y = box1.y + box1.h > box2.y and box1.y < box2.y + box2.h
     if check_x and check_y:
-        box2.parent.resolve_collision(box1)
+        box2.parent.resolve_collision()
 
 def random_float(max, min):
     return random.random() * (max - min) + min
 
 def setup():
+    global boxes
+    global game_objects
     global game_window
     global terrain
-    global astronaut
-    global game_objects
-    global boxes
+    global player
 
     boxes = []
     game_objects = [Platform(100, 400)]
     game_window = GameWindow()
     terrain = Terrain()
-    astronaut = Astronaut()
+    player = Player()
+
+# Global Variables
+gui = GUI()
+mouse = [False, False]
+gravity = 3
+clock = pygame.time.Clock()
+dt = 0
 
 setup()
+
 running = True
 while running:
     for event in pygame.event.get():
@@ -264,13 +296,15 @@ while running:
     pressed = pygame.mouse.get_pressed()
     mouse = (pressed[0], pressed[2])
 
-    astronaut.update()
+    gui.update()
+    player.update()
     game_window.update()
 
+    gui.draw()
     terrain.draw()
     for game_object in game_objects:
         game_object.draw()
-    astronaut.draw()
+    player.draw()
 
     for box in boxes:
         box.draw()
