@@ -249,32 +249,47 @@ class FuelGUI:
         screen.blit(self.img, (self.x, self.y))
 
     def update(self):
-        filled = 3.5
-        def hex_points(length, start):
-            points = [start]
+        filled = 5.5
+        def hex_points(length, center):
+            points = [(center[0] - length, center[1] - length)]
+            pygame.draw.rect(screen, 'green', (points[0][0], points[0][1], 10, 10))
 
             for i in range(1, 6):
-                n = (i + 4) % 6
-                x = length * math.cos(math.pi * n / 3) + points[i - 1][0]
-                y = length * math.sin(math.pi * n / 3) + points[i - 1][1]
+                angle = -60 * math.pi / 180 + i * 60 * math.pi / 180
+                x = length * math.cos(angle) + points[i - 1][0]
+                y = length * math.sin(angle) + points[i - 1][1]
+
                 points.append((x, y))
+            
+            points.append(points.pop(0))
 
             return points
                 
-        big_hex = hex_points(30, (100, 45))
-        small_hex = hex_points(20, (110, 45))
+        big_hex = hex_points(30, (0, 0))
+        # small_hex = hex_points(20, (100, 50))
         
         pygame.draw.polygon(screen, 'white', big_hex, 2)
-        pygame.draw.polygon(screen, 'white', small_hex, 2)
-        for n in range(6):
-            if math.floor(filled) < 6 - (n + 5) % 6:
-                continue
+        # pygame.draw.polygon(screen, 'white', small_hex, 2)
+        # for n in range(6):
+        #     index1 = n
+        #     index2 = (n + 1) % 6
 
-            index1 = n % 6
-            index2 = (n + 1) % 6
+        #     if math.floor(filled) == 5 - n:
+        #         width = filled % 1
 
-            points = big_hex[index1], big_hex[index2], small_hex[index2], small_hex[index1]
-            pygame.draw.polygon(screen, 'white', points)
+        #         x1 = (big_hex[index1][0] + big_hex[index2][0]) * width
+        #         y1 = (big_hex[index1][1] + big_hex[index2][1]) * width
+
+        #         x2 = (small_hex[index1][0] + small_hex[index2][0]) * width
+        #         y2 = (small_hex[index1][1] + small_hex[index2][1]) * width
+
+        #         points = [(x1, y1), big_hex[index2], small_hex[index2], (x2, y2)]
+        #     elif math.floor(filled) < 5 - n:
+        #         continue
+        #     else:
+        #         points = [big_hex[index1], big_hex[index2], small_hex[index2], small_hex[index1]]
+
+        #     pygame.draw.polygon(screen, 'white', points)
 
 def box_collision(box1, box2):
     check_x = box1.x + box1.w > box2.x and box1.x < box2.x + box2.w
