@@ -1,8 +1,6 @@
 import random
 import math
-from typing import Any
 import pygame
-from gui_elements import add_gui_elements
 
 pygame.init()
 display_size = (900, 900)
@@ -26,6 +24,9 @@ class Player:
 
         self.max_landing_speed = 150
 
+        self.fuel = 6
+        self.delta_fuel = 0.05
+
     def draw(self):
         pygame.draw.rect(screen, 'white', (self.x - game_window.x, self.y - game_window.y, self.w, self.h))
 
@@ -41,13 +42,18 @@ class Player:
 
     def update_velocity(self):
         self.vy += gravity
+
+        if self.fuel <= 0:
+            return
     
         if mouse[0]:
             self.vy -= self.y_thrust
             self.vx += self.x_thrust
+            self.fuel -= self.delta_fuel
         if mouse[1]:
             self.vy -= self.y_thrust
             self.vx -= self.x_thrust
+            self.fuel -= self.delta_fuel
 
     def check_object_collision(self):
         for game_object in game_objects:
@@ -241,15 +247,14 @@ class GUI:
 
 class FuelGUI:
     def __init__(self):
-        self.x = 20
-        self.y = 20
+        self.x = 30
+        self.y = 30
         self.img = pygame.image.load('./img/fuel.png')
 
     def draw(self):
         screen.blit(self.img, (self.x, self.y))
 
     def update(self):
-        filled = 4.5
         def hex_points(length, center):
             points = [(center[0] - length, center[1])]
 
@@ -263,29 +268,35 @@ class FuelGUI:
             points.append(points.pop(0))
 
             return points
-                
-        big_hex = hex_points(30, (200, 200))
-        small_hex = hex_points(20, (200, 200))
+
+        center = (self.x + 18, self.y + 17)    
+        big_hex = hex_points(38, center)
+        small_hex = hex_points(30, center)
         
-        pygame.draw.polygon(screen, 'white', big_hex, 2)
-        pygame.draw.polygon(screen, 'white', small_hex, 2)
+        pygame.draw.polygon(screen, 'white', big_hex, 1)
+        pygame.draw.polygon(screen, 'white', small_hex, 1)
 
         for n in range(6):
             index1 = n
             index2 = (n + 1) % 6
 
-            if math.floor(filled) == 5 - n:
-                width = filled % 1
-
-                x1 = (big_hex[index1][0] + big_hex[index2][0]) * width
-                y1 = (big_hex[index1][1] + big_hex[index2][1]) * width
-
-                x2 = (small_hex[index1][0] + small_hex[index2][0]) * width
-                y2 = (small_hex[index1][1] + small_hex[index2][1]) * width
-
-                points = [(x1, y1), big_hex[index2], small_hex[index2], (x2, y2)]
-            elif math.floor(filled) < 5 - n:
+            if math.floor(player.fuel) < 5 - n:
                 continue
+            elif math.floor(player.fuel) == 5 - n:
+                if player.fuel % 1 <= 0:
+                    continue
+
+                width = 1 - (player.fuel % 1)
+
+                def between_points(p1, p2):
+                    x = p1[0] + (p2[0] - p1[0]) * width
+                    y = p1[1] + (p2[1] - p1[1]) * width
+                    return (x, y)
+
+                big_hex_point = between_points(big_hex[index1], big_hex[index2])
+                small_hex_point = between_points(small_hex[index1], small_hex[index2])
+                
+                points = [big_hex_point, big_hex[index2], small_hex[index2], small_hex_point]
             else:
                 points = [big_hex[index1], big_hex[index2], small_hex[index2], small_hex[index1]]
 
