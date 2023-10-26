@@ -16,6 +16,9 @@ class Player:
 
         self.box = BoundingBox(self, 0, 0, self.w, self.h)
 
+        self.state = 'landed'
+        self.platform_x = None
+
         self.vx = 0
         self.vy = 0
 
@@ -23,6 +26,8 @@ class Player:
         self.y_thrust = 5
 
         self.max_landing_speed = 150
+        self.launch_speed_x = 150
+        self.launch_speed_y = -150
 
         self.fuel = 6
         self.delta_fuel = 0.05
@@ -41,7 +46,19 @@ class Player:
         self.y += self.vy * dt
 
     def update_velocity(self):
+        if self.state == 'landed':
+            if (mouse[0] or mouse[1]):
+                self.vx = self.launch_speed_x
+                self.vy = self.launch_speed_y
+                self.state = 'launching'
+            return
+        
         self.vy += gravity
+
+        if self.state == 'launching':
+            if mouse[0] == False and mouse[1] == False:
+                self.state = 'flying'
+            return
 
         if self.fuel <= 0:
             return
@@ -49,10 +66,11 @@ class Player:
         if mouse[0]:
             self.vy -= self.y_thrust
             self.vx += self.x_thrust
-            self.fuel -= self.delta_fuel
         if mouse[1]:
             self.vy -= self.y_thrust
             self.vx -= self.x_thrust
+
+        if mouse[0] or mouse[1]:
             self.fuel -= self.delta_fuel
 
     def check_object_collision(self):
@@ -65,7 +83,7 @@ class Player:
         
         check_lines = []
 
-        index = max(math.floor((self.x - game_window.x) / terrain.max_length - 1), 0)
+        index = terrain.get_min_index(self.x)
         line = terrain.lines[index]
 
         while line.x1 < self.x + self.w:
@@ -86,8 +104,8 @@ class Player:
         if highest_point > self.y + self.h:
             return
         
-        left_below = highest_line.getY(self.x) < self.y + self.h
-        right_below = highest_line.getY(self.x + self.w) < self.y + self.h
+        left_below = highest_line.get_y(self.x) < self.y + self.h
+        right_below = highest_line.get_y(self.x + self.w) < self.y + self.h
         if left_below or right_below:
             setup()
 
@@ -106,6 +124,8 @@ class Platform:
             player.box.y = self.box.y - player.box.h
             player.vy = 0
             player.vx = 0
+            player.state = 'landed'
+            player.platform_x = self.x
         else:
             setup()
 
@@ -188,7 +208,14 @@ class Terrain:
     def add_vectors(self):
         if self.lines[-1].x2 < game_window.x + display_size[0]:
             self.generate_terrain()
-    
+
+    def get_slope_direction(self, x):
+        index = self.get_min_index(x)
+
+    def get_min_index(self, x):
+        index = math.floor((x - game_window.x) / terrain.max_length) - 1
+        print(index, len(self.lines))
+        return index
     
     def draw(self):
         self.remove_vectors()
@@ -210,7 +237,7 @@ class Line:
 
         self.color = 'white'
 
-    def getY(self, x):
+    def get_y(self, x):
         if x < self.x1 or x > self.x2:
             return float('inf')
         else:
@@ -345,7 +372,7 @@ while running:
     dt = clock.tick(60) / 1000
 
     pressed = pygame.mouse.get_pressed()
-    mouse = (pressed[0], pressed[2])
+    mouse = [pressed[0], pressed[2]]
 
     gui.update()
     player.update()
