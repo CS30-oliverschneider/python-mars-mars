@@ -8,16 +8,16 @@ screen = pygame.display.set_mode(display_size)
 pygame.display.set_caption('Mars Mars')
 
 class Player:
-    def __init__(self):
-        self.x = 100
-        self.y = 100
+    def __init__(self, platform):
         self.w = 50
         self.h = 50
+        self.x = platform.x + platform.w / 2 - self.w / 2
+        self.y = platform.y - self.h
 
         self.box = BoundingBox(self, 0, 0, self.w, self.h)
 
         self.state = 'landed'
-        self.platform_x = None
+        self.platform = platform
 
         self.vx = 0
         self.vy = 0
@@ -27,7 +27,7 @@ class Player:
 
         self.max_landing_speed = 150
         self.launch_speed_x = 150
-        self.launch_speed_y = -150
+        self.launch_speed_y = -300
 
         self.fuel = 6
         self.delta_fuel = 0.05
@@ -47,30 +47,34 @@ class Player:
 
     def update_velocity(self):
         if self.state == 'landed':
-            if (mouse[0] or mouse[1]):
+            if not mouse.down:
+                self.state = 'ready'
+            return
+        elif self.state == 'ready':
+            if mouse.down:
                 self.vx = self.launch_speed_x
                 self.vy = self.launch_speed_y
-                self.state = 'launching'
+                self.state = 'launched'
             return
         
         self.vy += gravity
 
-        if self.state == 'launching':
-            if mouse[0] == False and mouse[1] == False:
+        if self.state == 'launched':
+            if not mouse.down:
                 self.state = 'flying'
             return
 
         if self.fuel <= 0:
             return
     
-        if mouse[0]:
+        if mouse.left:
             self.vy -= self.y_thrust
             self.vx += self.x_thrust
-        if mouse[1]:
+        if mouse.right:
             self.vy -= self.y_thrust
             self.vx -= self.x_thrust
 
-        if mouse[0] or mouse[1]:
+        if mouse.down:
             self.fuel -= self.delta_fuel
 
     def check_object_collision(self):
@@ -167,11 +171,14 @@ class Terrain:
         self.lines = [Line(0, 700, 0, 0)]
         self.highest = float('inf')
 
-        self.min_length = 10
-        self.max_length = 50
-        self.min_angle = -1
-        self.max_angle = 1
-        self.max_delta_angle = 0.5
+        self.line_min_length = 10
+        self.line_max_length = 50
+        self.line_min_angle = -1
+        self.line_max_angle = 1
+        self.line_max_delta_angle = 0.5
+
+        self.platform_min_dist = 100
+        self.platform_max_dist = 300
 
         self.generate_terrain()
 
@@ -189,15 +196,21 @@ class Terrain:
                 self.highest = highest
 
     def new_line(self):
+        min_length = self.line_min_length
+        max_length = self.line_max_length
+        min_angle = self.line_min_angle
+        max_angle = self.line_max_angle
+        max_delta_angle = self.line_max_delta_angle
+
         last_line = self.lines[-1]
 
-        delta_angle = random_float(-self.max_delta_angle, self.max_delta_angle)
+        delta_angle = random_float(-max_delta_angle, max_delta_angle)
         new_angle = last_line.angle + delta_angle
 
-        if new_angle < self.min_angle or new_angle > self.max_angle:
+        if new_angle < min_angle or new_angle > max_angle:
             new_angle = last_line.angle - delta_angle
 
-        new_length = random_float(self.max_length, self.min_length)
+        new_length = random_float(max_length, min_length)
 
         return Line(last_line.x2, last_line.y2, new_length, new_angle)
     
@@ -213,9 +226,7 @@ class Terrain:
         index = self.get_min_index(x)
 
     def get_min_index(self, x):
-        index = math.floor((x - game_window.x) / terrain.max_length) - 1
-        print(index, len(self.lines))
-        return index
+        return math.floor((x - game_window.x) / terrain.line_max_length) - 1
     
     def draw(self):
         self.remove_vectors()
@@ -257,6 +268,19 @@ class GameWindow:
     def update(self):
         self.x += player.vx * dt
         self.y += player.vy * dt
+
+class Mouse:
+    def __init__(self):
+        self.left = False
+        self.right = False
+        self.down = False
+
+    def update(self):
+        pressed = pygame.mouse.get_pressed()
+
+        self.left = pressed[0]
+        self.right = pressed[2]
+        self.down = self.left or self.right
 
 class GUI:
     def __init__(self):
@@ -346,14 +370,15 @@ def setup():
     global player
 
     boxes = []
-    game_objects = [Platform(100, 400)]
+    platform = Platform(100, 400)
+    game_objects = [platform]
     game_window = GameWindow()
     terrain = Terrain()
-    player = Player()
+    player = Player(platform)
 
 # Global Variables
 gui = GUI()
-mouse = [False, False]
+mouse = Mouse()
 gravity = 3
 clock = pygame.time.Clock()
 dt = 0
@@ -371,9 +396,7 @@ while running:
     screen.fill('black')
     dt = clock.tick(60) / 1000
 
-    pressed = pygame.mouse.get_pressed()
-    mouse = [pressed[0], pressed[2]]
-
+    mouse.update()
     gui.update()
     player.update()
     game_window.update()
