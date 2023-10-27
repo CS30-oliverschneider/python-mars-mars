@@ -1,6 +1,7 @@
 import random
 import math
 import pygame
+import time
 
 pygame.init()
 display_size = (900, 900)
@@ -85,24 +86,7 @@ class Player:
         if terrain.highest > self.y + self.h:
             return
         
-        check_lines = []
-
-        index = terrain.get_min_index(self.x)
-        line = terrain.lines[index]
-
-        while line.x1 < self.x + self.w:
-            if line.x2 > self.x:
-                check_lines.append(line)
-            index += 1
-            line = terrain.lines[index]
-
-        for line in terrain.lines:
-            line.color = 'white'
-
-        for line in check_lines:
-            line.color = 'red'
-
-        highest_line = min(check_lines, key = lambda line: min(line.y1, line.y2))
+        highest_line = terrain.highest_in_range(self.x, self.x + self.w)
 
         highest_point = min(highest_line.y1, highest_line.y2)
         if highest_point > self.y + self.h:
@@ -113,13 +97,21 @@ class Player:
         if left_below or right_below:
             setup()
 
+class PlatformGenerator:
+    def __init__(self, terrain):
+        self.terrain = terrain
+
+        self.platform_min_dist = 100
+        self.platform_max_dist = 300
 
 class Platform:
-    def __init__(self, x, y):
+    def __init__(self, x):
         self.x = x
-        self.y = y
         self.w = 50
         self.h = 10
+
+        highest_line = terrain.highest_in_range(self.x, self.x + self.w)
+        self.y = min(highest_line.y1, highest_line.y2) - self.h
 
         self.box = BoundingBox(self, 0, 0, self.w, self.h)
 
@@ -171,18 +163,52 @@ class Terrain:
         self.lines = [Line(0, 700, 0, 0)]
         self.highest = float('inf')
 
-        self.line_min_length = 10
-        self.line_max_length = 50
-        self.line_min_angle = -1
-        self.line_max_angle = 1
-        self.line_max_delta_angle = 0.5
+        self.line_generator = LineGenerator(self)
+        self.platform_generator = PlatformGenerator(self)
 
-        self.platform_min_dist = 100
-        self.platform_max_dist = 300
+        self.line_generator.generate_lines()
 
-        self.generate_terrain()
+    def get_min_index(self, x):
+        return math.floor((x - game_window.x) / self.line_generator.max_length) - 1
+    
+    def highest_in_range(self, x_start, x_stop):
+        lines = []
 
-    def generate_terrain(self):
+        index = self.get_min_index(x_start)
+        line = self.lines[index]
+
+        while line.x1 < x_stop:
+            if line.x2 > x_start:
+                lines.append(line)
+            index += 1
+            line = self.lines[index]
+
+        for line in self.lines:
+            line.color = 'white'
+
+        for line in lines:
+            line.color = 'red'
+
+        return min(lines, key = lambda line: min(line.y1, line.y2))
+    
+    def draw(self):
+        self.line_generator.update()
+
+        for line in self.lines:
+            line.draw()
+
+class LineGenerator:
+    def __init__(self, terrain):
+        self.terrain = terrain
+        self.lines = terrain.lines
+
+        self.min_length = 10
+        self.max_length = 50
+        self.min_angle = -1
+        self.max_angle = 1
+        self.max_delta_angle = 0.5
+
+    def generate_lines(self):
         line = self.lines[-1]
         x = self.lines[-1].x2
 
@@ -192,48 +218,33 @@ class Terrain:
             x += line.dx
 
             highest = min(line.y1, line.y2)
-            if highest < self.highest:
-                self.highest = highest
+            if highest < self.terrain.highest:
+                self.terrain.highest = highest
 
     def new_line(self):
-        min_length = self.line_min_length
-        max_length = self.line_max_length
-        min_angle = self.line_min_angle
-        max_angle = self.line_max_angle
-        max_delta_angle = self.line_max_delta_angle
-
         last_line = self.lines[-1]
 
-        delta_angle = random_float(-max_delta_angle, max_delta_angle)
+        delta_angle = random_float(-self.max_delta_angle, self.max_delta_angle, last_line.x2)
         new_angle = last_line.angle + delta_angle
 
-        if new_angle < min_angle or new_angle > max_angle:
+        if new_angle < self.min_angle or new_angle > self.max_angle:
             new_angle = last_line.angle - delta_angle
 
-        new_length = random_float(max_length, min_length)
+        new_length = random_float(self.max_length, self.min_length, last_line.x2)
 
         return Line(last_line.x2, last_line.y2, new_length, new_angle)
     
-    def remove_vectors(self):
+    def add_lines(self):
+        if self.lines[-1].x2 < game_window.x + display_size[0]:
+            self.generate_lines()
+
+    def remove_lines(self):
         if self.lines[0].x2 < game_window.x:
             self.lines.pop(0)
 
-    def add_vectors(self):
-        if self.lines[-1].x2 < game_window.x + display_size[0]:
-            self.generate_terrain()
-
-    def get_slope_direction(self, x):
-        index = self.get_min_index(x)
-
-    def get_min_index(self, x):
-        return math.floor((x - game_window.x) / terrain.line_max_length) - 1
-    
-    def draw(self):
-        self.remove_vectors()
-        self.add_vectors()
-
-        for line in self.lines:
-            line.draw()
+    def update(self):
+        self.add_lines()
+        self.remove_lines()
 
 class Line:
     def __init__(self, x1, y1, length, angle):
@@ -258,7 +269,6 @@ class Line:
         p1 = (self.x1 - game_window.x, self.y1 - game_window.y)
         p2 = (self.x2 - game_window.x, self.y2 - game_window.y)
         pygame.draw.line(screen, self.color, p1, p2)
-
 
 class GameWindow:
     def __init__(self):
@@ -359,21 +369,22 @@ def box_collision(box1, box2):
     if check_x and check_y:
         box2.parent.resolve_collision()
 
-def random_float(max, min):
+def random_float(max, min, seed_offset = 0):
+    random.seed(seed + seed_offset)
     return random.random() * (max - min) + min
 
 def setup():
-    global boxes
-    global game_objects
     global game_window
     global terrain
+    global boxes
+    global game_objects
     global player
 
-    boxes = []
-    platform = Platform(100, 400)
-    game_objects = [platform]
     game_window = GameWindow()
     terrain = Terrain()
+    boxes = []
+    platform = Platform(100)
+    game_objects = [platform]
     player = Player(platform)
 
 # Global Variables
@@ -382,6 +393,7 @@ mouse = Mouse()
 gravity = 3
 clock = pygame.time.Clock()
 dt = 0
+seed = time.time()
 
 setup()
 
