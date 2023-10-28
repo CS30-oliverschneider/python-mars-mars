@@ -23,6 +23,7 @@ class Player:
         self.delta_frame = 0
 
         self.platform = platform
+        self.slide_speed = 2
         self.box = BoundingBox(self, 0, 0, self.w, self.h)
 
         self.state = 'landed'
@@ -57,6 +58,7 @@ class Player:
         self.move()
         self.check_object_collision()
         self.check_terrain_collision()
+        self.to_platform_center()
 
     def move(self):
         self.x += self.vx * dt
@@ -102,13 +104,26 @@ class Player:
             box_collision(self.box, game_object.box)
 
     def check_terrain_collision(self):
-        if terrain.highest > self.y + self.h:
+        if (self.state != 'launched' and self.state != 'flying') or terrain.highest > self.y + self.h:
             return
         
         highest_y = terrain.highest_in_range(self.x, self.x + self.w)
 
         if self.y + self.h > highest_y:
             setup()
+
+    def to_platform_center(self):
+        def center(obj):
+            return obj.x + obj.w / 2
+        
+        dist = center(self.platform) - center(self)
+
+        if (self.state == 'landed' or self.state == 'ready') and dist != 0:
+            direction = dist / abs(dist)
+            self.x += self.slide_speed * direction
+
+            if direction * center(self) > direction * center(self.platform):
+                self.x = center(self.platform) - self.w / 2
 
 class PlatformGenerator:
     def __init__(self, terrain):
@@ -136,7 +151,7 @@ class Platform:
             player.vy = 0
             player.vx = 0
             player.state = 'landed'
-            player.platform_x = self.x
+            player.platform = self
             player.delta_frame = -1
             player.fuel = 6
         else:
@@ -174,13 +189,13 @@ class BoundingBox:
 
 class Terrain:
     def __init__(self):
-        self.lines = [Line(0, 700, 0, 0)]
+        self.lines = []
         self.highest = float('inf')
 
         self.line_generator = LineGenerator(self)
         self.platform_generator = PlatformGenerator(self)
 
-        self.line_generator.generate_lines()
+        self.line_generator.generate_lines(1)
 
     def draw(self):
         self.line_generator.update()
@@ -276,53 +291,83 @@ class LineGenerator:
         self.max_angle = 1
         self.max_delta_angle = 0.5
 
+        self.lines.append(Line(0, 700, 0, 700, 0))
+
     def update(self):
         self.add_lines()
         self.remove_lines()
 
-    def generate_lines(self):
-        line = self.lines[-1]
-        x = self.lines[-1].x2
+    def generate_lines(self, direction):
+        index = -1
+        line = self.lines[index]
+        x = line.x2
 
-        while x < game_window.x + display_size[0]:
-            line = self.new_line()
-            self.lines.append(line)
-            x += line.dx
+        if direction == -1:
+            index = 0
+            x = line.x1
+
+        while x >= game_window.x and x < game_window.x + display_size[0]:
+            line = self.new_line(self.lines[index], direction)
+
+            if direction == 1:
+                self.lines.append(line)
+                x = line.x2
+            elif direction == -1:
+                self.lines.insert(0, line)
+                x = line.x1
 
             highest = min(line.y1, line.y2)
             if highest < self.terrain.highest:
                 self.terrain.highest = highest
 
-    def new_line(self):
-        last_line = self.lines[-1]
+    def new_line(self, last_line, direction):
+        seed_offset = last_line.seed_offset + direction
 
-        delta_angle = random_float(-self.max_delta_angle, self.max_delta_angle, last_line.x2)
+        delta_angle = random_float(-self.max_delta_angle, self.max_delta_angle, seed_offset)
         new_angle = last_line.angle + delta_angle
 
         if new_angle < self.min_angle or new_angle > self.max_angle:
             new_angle = last_line.angle - delta_angle
 
-        new_length = random_float(self.max_length, self.min_length, last_line.x2)
+        new_length = random_float(self.max_length, self.min_length, seed_offset)
 
-        return Line(last_line.x2, last_line.y2, new_length, new_angle)
+        if direction == 1:
+            x1 = last_line.x2
+            y1 = last_line.y2
+
+            x2 = x1 + new_length * math.cos(new_angle)
+            y2 = y1 + new_length * math.sin(new_angle)
+        elif direction == -1:
+            x2 = last_line.x1
+            y2 = last_line.y1
+
+            x1 = x2 - new_length * math.cos(new_angle)
+            y1 = y2 - new_length * math.sin(new_angle)
+
+        return Line(x1, y1, x2, y2, seed_offset)
     
     def add_lines(self):
         if self.lines[-1].x2 < game_window.x + display_size[0]:
-            self.generate_lines()
+            self.generate_lines(1)
+        elif self.lines[0].x1 > game_window.x:
+            self.generate_lines(-1)
 
     def remove_lines(self):
         if self.lines[0].x2 < game_window.x:
             self.lines.pop(0)
+        elif self.lines[-1].x1 > game_window.x + display_size[0]:
+            self.lines.pop(-1)
 
 class Line:
-    def __init__(self, x1, y1, length, angle):
+    def __init__(self, x1, y1, x2, y2, seed_offset):
         self.x1 = x1
         self.y1 = y1
-        self.length = length
-        self.angle = angle
+        self.x2 = x2
+        self.y2 = y2
 
-        self.y2 = y1 + length * math.sin(angle)
-        self.x2 = x1 + length * math.cos(angle)
+        self.seed_offset = seed_offset
+
+        self.angle = math.atan2(y2 - y1, x2 - x1)
         self.dx = self.x2 - self.x1
 
         self.color = 'white'
