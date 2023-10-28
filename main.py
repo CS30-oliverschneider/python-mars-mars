@@ -10,15 +10,22 @@ pygame.display.set_caption('Mars Mars')
 
 class Player:
     def __init__(self, platform):
-        self.w = 50
-        self.h = 50
+        self.w = 40
+        self.h = 40
         self.x = platform.x + platform.w / 2 - self.w / 2
         self.y = platform.y - self.h
 
+        self.img = pygame.image.load('img/spritesheet.png')
+        self.frame_width = 40
+        self.frame_height = 40
+        self.anim_speed = 3
+        self.current_frame = 0
+        self.delta_frame = 0
+
+        self.platform = platform
         self.box = BoundingBox(self, 0, 0, self.w, self.h)
 
         self.state = 'landed'
-        self.platform = platform
 
         self.vx = 0
         self.vy = 0
@@ -34,7 +41,16 @@ class Player:
         self.delta_fuel = 0.05
 
     def draw(self):
-        pygame.draw.rect(screen, 'white', (self.x - game_window.x, self.y - game_window.y, self.w, self.h))
+        if self.delta_frame != 0 and frame_count % self.anim_speed == 0:
+            self.current_frame += self.delta_frame
+
+            if self.current_frame == 0:
+                self.delta_frame = 0
+            elif self.current_frame == 6:
+                self.delta_frame = 0
+                self.launch()
+
+        screen.blit(self.img, (self.x - game_window.x, self.y - game_window.y, self.w, self.h), (self.frame_width * self.current_frame, 0, self.frame_width, self.frame_height))
 
     def update(self):
         self.update_velocity()
@@ -53,9 +69,7 @@ class Player:
             return
         elif self.state == 'ready':
             if mouse.down:
-                self.vx = self.launch_speed_x
-                self.vy = self.launch_speed_y
-                self.state = 'launched'
+                self.delta_frame = 1
             return
         
         self.vy += gravity
@@ -78,6 +92,11 @@ class Player:
         if mouse.down:
             self.fuel -= self.delta_fuel
 
+    def launch(self):
+        self.vx = self.launch_speed_x
+        self.vy = self.launch_speed_y
+        self.state = 'launched'
+
     def check_object_collision(self):
         for game_object in game_objects:
             box_collision(self.box, game_object.box)
@@ -86,15 +105,9 @@ class Player:
         if terrain.highest > self.y + self.h:
             return
         
-        highest_line = terrain.highest_in_range(self.x, self.x + self.w)
+        highest_y = terrain.highest_in_range(self.x, self.x + self.w)
 
-        highest_point = min(highest_line.y1, highest_line.y2)
-        if highest_point > self.y + self.h:
-            return
-        
-        left_below = highest_line.get_y(self.x) < self.y + self.h
-        right_below = highest_line.get_y(self.x + self.w) < self.y + self.h
-        if left_below or right_below:
+        if self.y + self.h > highest_y:
             setup()
 
 class PlatformGenerator:
@@ -110,10 +123,12 @@ class Platform:
         self.w = 50
         self.h = 10
 
-        highest_line = terrain.highest_in_range(self.x, self.x + self.w)
-        self.y = min(highest_line.y1, highest_line.y2) - self.h
+        self.y = terrain.highest_in_range(self.x, self.x + self.w) - self.h
 
         self.box = BoundingBox(self, 0, 0, self.w, self.h)
+
+    def draw(self):
+        pygame.draw.rect(screen, 'green', (self.x - game_window.x, self.y - game_window.y, self.w, self.h))
 
     def resolve_collision(self):
         if player.vy < player.max_landing_speed:
@@ -122,11 +137,10 @@ class Platform:
             player.vx = 0
             player.state = 'landed'
             player.platform_x = self.x
+            player.delta_frame = -1
+            player.fuel = 6
         else:
             setup()
-
-    def draw(self):
-        pygame.draw.rect(screen, 'green', (self.x - game_window.x, self.y - game_window.y, self.w, self.h))
 
 class BoundingBox:
     def __init__(self, parent, relative_x, relative_y, w, h):
@@ -168,34 +182,88 @@ class Terrain:
 
         self.line_generator.generate_lines()
 
-    def get_min_index(self, x):
-        return math.floor((x - game_window.x) / self.line_generator.max_length) - 1
-    
-    def highest_in_range(self, x_start, x_stop):
-        lines = []
-
-        index = self.get_min_index(x_start)
-        line = self.lines[index]
-
-        while line.x1 < x_stop:
-            if line.x2 > x_start:
-                lines.append(line)
-            index += 1
-            line = self.lines[index]
-
-        for line in self.lines:
-            line.color = 'white'
-
-        for line in lines:
-            line.color = 'red'
-
-        return min(lines, key = lambda line: min(line.y1, line.y2))
-    
     def draw(self):
         self.line_generator.update()
 
         for line in self.lines:
             line.draw()
+
+    def get_min_index(self, x):
+        return math.floor((x - game_window.x) / self.line_generator.max_length) - 1
+    
+    def highest_in_range(self, x_start, x_stop):
+        y_values = []
+
+        index = self.get_min_index(x_start)
+        line = self.lines[index]
+
+        while line.x1 <= x_stop:
+            if line.x2 >= x_start:
+                if len(y_values) == 0:
+                    y_values.extend((line.get_y(x_start), line.y2))
+                elif line.x2 > x_stop:
+                    y_values.extend((line.y1, line.get_y(x_stop)))
+                else:
+                    y_values.extend((line.y1, line.y2))
+
+            index += 1
+            line = self.lines[index]
+
+        return min(y_values)
+
+class Spring:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.stop_length = 200
+        self.acceleration_up = 10
+        self.damping = 3
+
+        self.bob_mass = 50
+        self.bob_x = x
+        self.bob_y = self.y - self.stop_length
+        self.bob_vx = 0
+        self.bob_vy = 0
+
+        self.rest_length = self.stop_length - self.acceleration_up * self.bob_mass
+
+    def draw(self):
+        pygame.draw.line(screen, 'blue', (self.x, self.y), (self.bob_x, self.bob_y), 5)
+        pygame.draw.circle(screen, 'blue', (self.bob_x, self.bob_y), 20)
+
+    def update(self):
+        self.update_velocity()
+        self.move()
+
+    def update_velocity(self):
+        length = math.sqrt((self.bob_x - self.x)**2 + (self.bob_y - self.y)**2)
+        stretch = length - self.rest_length
+        sine = (self.bob_x - self.x) / length
+        cosine = (self.bob_y - self.y) / length
+
+        ax = -1 / self.bob_mass * stretch * sine - self.damping / self.bob_mass * self.bob_vx
+        ay = -1 / self.bob_mass * stretch * cosine - self.damping / self.bob_mass * self.bob_vy - self.acceleration_up
+
+        self.bob_vx += ax
+        self.bob_vy += ay
+
+    def move(self):
+        self.bob_x += self.bob_vx
+        self.bob_y += self.bob_vy
+
+        if abs(self.bob_vx) < 0.01 and abs(self.bob_vy) < 0.01:
+            self.bob_x = self.x
+            self.bob_y = self.y - self.stop_length
+
+        if mouse.left:
+            mouse_coords = pygame.mouse.get_pos()
+            self.bob_x = mouse_coords[0]
+            self.bob_y = mouse_coords[1]
+
+            self.bob_vx = 0
+            self.bob_vy = 0
+
+spring = Spring(300, 500)
 
 class LineGenerator:
     def __init__(self, terrain):
@@ -207,6 +275,10 @@ class LineGenerator:
         self.min_angle = -1
         self.max_angle = 1
         self.max_delta_angle = 0.5
+
+    def update(self):
+        self.add_lines()
+        self.remove_lines()
 
     def generate_lines(self):
         line = self.lines[-1]
@@ -242,10 +314,6 @@ class LineGenerator:
         if self.lines[0].x2 < game_window.x:
             self.lines.pop(0)
 
-    def update(self):
-        self.add_lines()
-        self.remove_lines()
-
 class Line:
     def __init__(self, x1, y1, length, angle):
         self.x1 = x1
@@ -259,16 +327,16 @@ class Line:
 
         self.color = 'white'
 
+    def draw(self):
+        p1 = (self.x1 - game_window.x, self.y1 - game_window.y)
+        p2 = (self.x2 - game_window.x, self.y2 - game_window.y)
+        pygame.draw.line(screen, self.color, p1, p2)
+
     def get_y(self, x):
         if x < self.x1 or x > self.x2:
             return float('inf')
         else:
             return ((self.y2 - self.y1) / (self.x2 - self.x1)) * (x - self.x1) + self.y1
-
-    def draw(self):
-        p1 = (self.x1 - game_window.x, self.y1 - game_window.y)
-        p2 = (self.x2 - game_window.x, self.y2 - game_window.y)
-        pygame.draw.line(screen, self.color, p1, p2)
 
 class GameWindow:
     def __init__(self):
@@ -384,8 +452,10 @@ def setup():
     terrain = Terrain()
     boxes = []
     platform = Platform(100)
-    game_objects = [platform]
+    game_objects = [platform, Platform(800)]
     player = Player(platform)
+
+    game_window.y = player.y + player.h / 2 - display_size[1] / 2
 
 # Global Variables
 gui = GUI()
@@ -394,6 +464,7 @@ gravity = 3
 clock = pygame.time.Clock()
 dt = 0
 seed = time.time()
+frame_count = 0
 
 setup()
 
@@ -405,6 +476,7 @@ while running:
         if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
             setup()
 
+    frame_count += 1
     screen.fill('black')
     dt = clock.tick(60) / 1000
 
@@ -412,6 +484,7 @@ while running:
     gui.update()
     player.update()
     game_window.update()
+    # spring.update()
 
     gui.draw()
     terrain.draw()
@@ -419,7 +492,8 @@ while running:
         game_object.draw()
     player.draw()
 
-    for box in boxes:
-        box.draw()
+    # for box in boxes:
+    #     box.draw()
+    spring.draw()
 
     pygame.display.flip()
