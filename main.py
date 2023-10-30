@@ -9,11 +9,11 @@ screen = pygame.display.set_mode(display_size)
 pygame.display.set_caption('Mars Mars')
 
 class Player:
-    def __init__(self, platform):
+    def __init__(self):
         self.w = 40
         self.h = 40
-        self.x = platform.x + platform.w / 2 - self.w / 2
-        self.y = platform.y - self.h
+        self.x = 0
+        self.y = display_size[1] / 2 - self.h / 2
 
         self.img = pygame.image.load('img/spritesheet.png')
         self.frame_width = 40
@@ -22,7 +22,7 @@ class Player:
         self.current_frame = 0
         self.delta_frame = 0
 
-        self.platform = platform
+        self.platform = None
         self.slide_speed = 2
         self.box = BoundingBox(self, 0, 0, self.w, self.h)
 
@@ -51,7 +51,7 @@ class Player:
                 self.delta_frame = 0
                 self.launch()
 
-        screen.blit(self.img, (self.x - game_window.x, self.y - game_window.y, self.w, self.h), (self.frame_width * self.current_frame, 0, self.frame_width, self.frame_height))
+        screen.blit(self.img, (self.x - game_window.left, self.y - game_window.top, self.w, self.h), (self.frame_width * self.current_frame, 0, self.frame_width, self.frame_height))
 
     def update(self):
         self.update_velocity()
@@ -113,49 +113,14 @@ class Player:
             setup()
 
     def to_platform_center(self):
-        def center(obj):
-            return obj.x + obj.w / 2
-        
-        dist = center(self.platform) - center(self)
+        dist = center_x(self.platform) - center_x(self)
 
         if (self.state == 'landed' or self.state == 'ready') and dist != 0:
             direction = dist / abs(dist)
             self.x += self.slide_speed * direction
 
-            if direction * center(self) > direction * center(self.platform):
-                self.x = center(self.platform) - self.w / 2
-
-class PlatformGenerator:
-    def __init__(self, terrain):
-        self.terrain = terrain
-
-        self.platform_min_dist = 100
-        self.platform_max_dist = 300
-
-class Platform:
-    def __init__(self, x):
-        self.x = x
-        self.w = 50
-        self.h = 10
-
-        self.y = terrain.highest_in_range(self.x, self.x + self.w) - self.h
-
-        self.box = BoundingBox(self, 0, 0, self.w, self.h)
-
-    def draw(self):
-        pygame.draw.rect(screen, 'green', (self.x - game_window.x, self.y - game_window.y, self.w, self.h))
-
-    def resolve_collision(self):
-        if player.vy < player.max_landing_speed:
-            player.box.y = self.box.y - player.box.h
-            player.vy = 0
-            player.vx = 0
-            player.state = 'landed'
-            player.platform = self
-            player.delta_frame = -1
-            player.fuel = 6
-        else:
-            setup()
+            if direction * center_x(self) > direction * center_x(self.platform):
+                self.x = center_x(self.platform) - self.w / 2
 
 class BoundingBox:
     def __init__(self, parent, relative_x, relative_y, w, h):
@@ -185,11 +150,12 @@ class BoundingBox:
             return super().__getattribute__(name)
     
     def draw(self):
-        pygame.draw.rect(screen, 'red', (self.x - game_window.x, self.y - game_window.y, self.w, self.h), 1)
+        pygame.draw.rect(screen, 'red', (self.x - game_window.left, self.y - game_window.top, self.w, self.h), 1)
 
 class Terrain:
     def __init__(self):
         self.lines = []
+        self.platforms = []
         self.highest = float('inf')
 
         self.line_generator = LineGenerator(self)
@@ -204,7 +170,7 @@ class Terrain:
             line.draw()
 
     def get_min_index(self, x):
-        return math.floor((x - game_window.x) / self.line_generator.max_length) - 1
+        return math.floor((x - game_window.left) / self.line_generator.max_length) - 1
     
     def highest_in_range(self, x_start, x_stop):
         y_values = []
@@ -278,7 +244,42 @@ class Spring:
             self.bob_vx = 0
             self.bob_vy = 0
 
-spring = Spring(300, 500)
+class PlatformGenerator:
+    def __init__(self, terrain):
+        self.terrain = terrain
+        self.platforms = terrain.platforms
+
+        self.platform_min_dist = 100
+        self.platform_max_dist = 300
+    
+    def add_platforms(self):
+        if self.platforms[-1].x < game_window.left:
+            pass
+
+class Platform:
+    def __init__(self, x):
+        self.x = x
+        self.w = 50
+        self.h = 10
+
+        self.y = terrain.highest_in_range(self.x, self.x + self.w) - self.h
+
+        self.box = BoundingBox(self, 0, 0, self.w, self.h)
+
+    def draw(self):
+        pygame.draw.rect(screen, 'green', (self.x - game_window.left, self.y - game_window.top, self.w, self.h))
+
+    def resolve_collision(self):
+        if player.vy < player.max_landing_speed:
+            player.box.y = self.box.y - player.box.h
+            player.vy = 0
+            player.vx = 0
+            player.state = 'landed'
+            player.platform = self
+            player.delta_frame = -1
+            player.fuel = 6
+        else:
+            setup()
 
 class LineGenerator:
     def __init__(self, terrain):
@@ -291,22 +292,23 @@ class LineGenerator:
         self.max_angle = 1
         self.max_delta_angle = 0.5
 
-        self.lines.append(Line(0, 700, 0, 700, 0))
+        self.lines.append(Line(game_window.left, 700, game_window.left, 700, 0))
 
     def update(self):
         self.add_lines()
         self.remove_lines()
 
     def generate_lines(self, direction):
-        index = -1
-        line = self.lines[index]
-        x = line.x2
-
-        if direction == -1:
+        if direction == 1:
+            index = -1
+            line = self.lines[index]
+            x = line.x2
+        elif direction == -1:
             index = 0
+            line = self.lines[index]
             x = line.x1
 
-        while x >= game_window.x and x < game_window.x + display_size[0]:
+        while x >= game_window.left and x <= game_window.right:
             line = self.new_line(self.lines[index], direction)
 
             if direction == 1:
@@ -347,15 +349,15 @@ class LineGenerator:
         return Line(x1, y1, x2, y2, seed_offset)
     
     def add_lines(self):
-        if self.lines[-1].x2 < game_window.x + display_size[0]:
+        if self.lines[-1].x2 < game_window.right:
             self.generate_lines(1)
-        elif self.lines[0].x1 > game_window.x:
+        elif self.lines[0].x1 > game_window.left:
             self.generate_lines(-1)
 
     def remove_lines(self):
-        if self.lines[0].x2 < game_window.x:
+        if self.lines[0].x2 < game_window.left:
             self.lines.pop(0)
-        elif self.lines[-1].x1 > game_window.x + display_size[0]:
+        elif self.lines[-1].x1 > game_window.right:
             self.lines.pop(-1)
 
 class Line:
@@ -373,8 +375,8 @@ class Line:
         self.color = 'white'
 
     def draw(self):
-        p1 = (self.x1 - game_window.x, self.y1 - game_window.y)
-        p2 = (self.x2 - game_window.x, self.y2 - game_window.y)
+        p1 = (self.x1 - game_window.left, self.y1 - game_window.top)
+        p2 = (self.x2 - game_window.left, self.y2 - game_window.top)
         pygame.draw.line(screen, self.color, p1, p2)
 
     def get_y(self, x):
@@ -385,12 +387,16 @@ class Line:
 
 class GameWindow:
     def __init__(self):
-        self.x = 0
-        self.y = 0
+        self.left = -200
+        self.right = self.left + display_size[0]
+        self.top = 0
+        self.bottom = self.top + display_size[1]
 
     def update(self):
-        self.x += player.vx * dt
-        self.y += player.vy * dt
+        self.left = player.x - 200
+        self.right = self.left + display_size[0]
+        self.top = center_y(player) - display_size[1] / 2
+        self.bottom = self.left + display_size[1]
 
 class Mouse:
     def __init__(self):
@@ -486,6 +492,12 @@ def random_float(max, min, seed_offset = 0):
     random.seed(seed + seed_offset)
     return random.random() * (max - min) + min
 
+def center_x(obj):
+    return obj.x + obj.w / 2
+
+def center_y(obj):
+    return obj.y + obj.h / 2
+
 def setup():
     global game_window
     global terrain
@@ -493,14 +505,13 @@ def setup():
     global game_objects
     global player
 
+    boxes = []
     game_window = GameWindow()
     terrain = Terrain()
-    boxes = []
-    platform = Platform(100)
-    game_objects = [platform, Platform(800)]
-    player = Player(platform)
-
-    game_window.y = player.y + player.h / 2 - display_size[1] / 2
+    platform = Platform(0)
+    game_objects = [platform]
+    player = Player()
+    player.platform = platform
 
 # Global Variables
 gui = GUI()
@@ -529,7 +540,6 @@ while running:
     gui.update()
     player.update()
     game_window.update()
-    # spring.update()
 
     gui.draw()
     terrain.draw()
@@ -539,6 +549,5 @@ while running:
 
     # for box in boxes:
     #     box.draw()
-    spring.draw()
 
     pygame.display.flip()
