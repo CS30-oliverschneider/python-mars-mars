@@ -10,10 +10,10 @@ pygame.display.set_caption('Mars Mars')
 
 class Player:
     def __init__(self):
+        self.x = 0
+        self.y = 0
         self.w = 40
         self.h = 40
-        self.x = 0
-        self.y = display_size[1] / 2 - self.h / 2
 
         self.img = pygame.image.load('img/spritesheet.png')
         self.frame_width = 40
@@ -100,8 +100,8 @@ class Player:
         self.state = 'launched'
 
     def check_object_collision(self):
-        for game_object in game_objects:
-            box_collision(self.box, game_object.box)
+        for platform in terrain.platforms:
+            box_collision(self.box, platform.box)
 
     def check_terrain_collision(self):
         if (self.state != 'launched' and self.state != 'flying') or terrain.highest > self.y + self.h:
@@ -158,19 +158,22 @@ class Terrain:
         self.platforms = []
         self.highest = float('inf')
 
-        self.line_generator = LineGenerator(self)
+        self.line_generator = LineGenerator(self, display_size[0])
         self.platform_generator = PlatformGenerator(self)
 
         self.line_generator.generate_lines(1)
 
     def draw(self):
         self.line_generator.update()
+        self.platform_generator.update()
 
         for line in self.lines:
             line.draw()
+        for platform in self.platforms:
+            platform.draw()
 
     def get_min_index(self, x):
-        return math.floor((x - game_window.left) / self.line_generator.max_length) - 1
+        return math.floor((x - game_window.left - self.line_generator.window_offset) / self.line_generator.max_length) - 1
     
     def highest_in_range(self, x_start, x_stop):
         y_values = []
@@ -249,20 +252,34 @@ class PlatformGenerator:
         self.terrain = terrain
         self.platforms = terrain.platforms
 
-        self.platform_min_dist = 100
-        self.platform_max_dist = 300
+        self.min_dist = 100
+        self.max_dist = 300
+        self.next_dist = random_float(self.max_dist, self.min_dist)
+
+    def update(self):
+        self.add_platforms()
+        self.remove_platforms()
     
     def add_platforms(self):
-        if self.platforms[-1].x < game_window.left:
-            pass
+        if self.platforms[-1].x < game_window.right:
+            new_x = self.platforms[-1].x + self.next_dist
+            new_seed_offset = self.platforms[-1].seed_offset + 1
+            self.platforms.append(Platform(new_x, new_seed_offset))
+
+            self.next_dist = random_float(self.max_dist, self.min_dist, new_seed_offset)
+
+    def remove_platforms(self):
+        if self.platforms[1].x > game_window.left:
+            self.platforms.pop()
 
 class Platform:
-    def __init__(self, x):
-        self.x = x
+    def __init__(self, x, seed_offset = 0):
         self.w = 50
         self.h = 10
-
+        self.x = x
         self.y = terrain.highest_in_range(self.x, self.x + self.w) - self.h
+
+        self.seed_offset = seed_offset
 
         self.box = BoundingBox(self, 0, 0, self.w, self.h)
 
@@ -282,9 +299,11 @@ class Platform:
             setup()
 
 class LineGenerator:
-    def __init__(self, terrain):
+    def __init__(self, terrain, window_offset):
         self.terrain = terrain
         self.lines = terrain.lines
+
+        self.window_offset = window_offset
 
         self.min_length = 10
         self.max_length = 50
@@ -292,7 +311,7 @@ class LineGenerator:
         self.max_angle = 1
         self.max_delta_angle = 0.5
 
-        self.lines.append(Line(game_window.left, 700, game_window.left, 700, 0))
+        self.lines.append(Line(game_window.left - window_offset, 700, game_window.left - window_offset, 700, 0))
 
     def update(self):
         self.add_lines()
@@ -308,7 +327,7 @@ class LineGenerator:
             line = self.lines[index]
             x = line.x1
 
-        while x >= game_window.left and x <= game_window.right:
+        while x >= game_window.left - self.window_offset and x <= game_window.right + self.window_offset:
             line = self.new_line(self.lines[index], direction)
 
             if direction == 1:
@@ -349,15 +368,15 @@ class LineGenerator:
         return Line(x1, y1, x2, y2, seed_offset)
     
     def add_lines(self):
-        if self.lines[-1].x2 < game_window.right:
+        if self.lines[-1].x2 < game_window.right + self.window_offset:
             self.generate_lines(1)
-        elif self.lines[0].x1 > game_window.left:
+        elif self.lines[0].x1 > game_window.left - self.window_offset:
             self.generate_lines(-1)
 
     def remove_lines(self):
-        if self.lines[0].x2 < game_window.left:
+        if self.lines[0].x2 < game_window.left - self.window_offset:
             self.lines.pop(0)
-        elif self.lines[-1].x1 > game_window.right:
+        elif self.lines[-1].x1 > game_window.right + self.window_offset:
             self.lines.pop(-1)
 
 class Line:
@@ -499,19 +518,22 @@ def center_y(obj):
     return obj.y + obj.h / 2
 
 def setup():
+    global boxes
     global game_window
     global terrain
-    global boxes
-    global game_objects
     global player
 
     boxes = []
     game_window = GameWindow()
     terrain = Terrain()
-    platform = Platform(0)
-    game_objects = [platform]
     player = Player()
+    platform = Platform(0)
+    terrain.platforms.append(platform)
+
+    platform.x = player.w / 2 - platform.w / 2
+    platform.y = terrain.highest_in_range(platform.x, platform.x + platform.w) - platform.h
     player.platform = platform
+    player.y = platform.y - player.h
 
 # Global Variables
 gui = GUI()
@@ -543,8 +565,6 @@ while running:
 
     gui.draw()
     terrain.draw()
-    for game_object in game_objects:
-        game_object.draw()
     player.draw()
 
     # for box in boxes:
