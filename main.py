@@ -171,14 +171,11 @@ class Terrain:
             line.draw()
         for platform in self.platforms:
             platform.draw()
-
-    def get_min_index(self, x):
-        return math.floor((x - game_window.left - self.line_generator.window_offset) / self.line_generator.max_length) - 1
     
     def highest_in_range(self, x_start, x_stop):
         y_values = []
 
-        index = self.get_min_index(x_start)
+        index = 0
         line = self.lines[index]
 
         while line.x1 <= x_stop:
@@ -252,25 +249,34 @@ class PlatformGenerator:
         self.terrain = terrain
         self.platforms = terrain.platforms
 
-        self.min_dist = 100
-        self.max_dist = 300
-        self.next_dist = random_float(self.max_dist, self.min_dist)
+        self.min_dist = 500
+        self.max_dist = 800
+        self.dist = random_float(self.max_dist, self.min_dist)
 
     def update(self):
         self.add_platforms()
         self.remove_platforms()
     
     def add_platforms(self):
-        if self.platforms[-1].x < game_window.right:
-            new_x = self.platforms[-1].x + self.next_dist
+        if self.platforms[-1].x + self.dist < game_window.right:
             new_seed_offset = self.platforms[-1].seed_offset + 1
+            new_x = self.platforms[-1].x + self.dist
             self.platforms.append(Platform(new_x, new_seed_offset))
-
-            self.next_dist = random_float(self.max_dist, self.min_dist, new_seed_offset)
+            
+            self.dist = random_float(self.max_dist, self.min_dist, new_seed_offset)
+        
+        if self.platforms[0].x + self.platforms[0].w > game_window.left:
+            new_seed_offset = self.platforms[0].seed_offset - 1
+            dist = random_float(self.max_dist, self.min_dist, new_seed_offset + 1)
+            new_x = self.platforms[0].x - dist
+            self.platforms.insert(0, Platform(new_x, new_seed_offset))
 
     def remove_platforms(self):
-        if self.platforms[1].x > game_window.left:
+        if self.platforms[-2].x > game_window.right:
             self.platforms.pop()
+
+        if self.platforms[1].x + self.platforms[1].w < game_window.left:
+            self.platforms.pop(0)
 
 class Platform:
     def __init__(self, x, seed_offset = 0):
