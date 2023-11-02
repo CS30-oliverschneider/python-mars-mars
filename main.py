@@ -16,6 +16,11 @@ class Player:
         self.h = 40
 
         self.img = pygame.image.load('img/spritesheet.png')
+        self.img_x = 0
+        self.img_y = 0
+        self.img_w = self.w
+        self.img_h = self.h
+
         self.frame_width = 40
         self.frame_height = 40
         self.anim_speed = 3
@@ -24,7 +29,6 @@ class Player:
 
         self.platform = None
         self.slide_speed = 2
-        self.box = BoundingBox(self, 0, 0, self.w, self.h)
 
         self.state = 'landed'
 
@@ -51,7 +55,11 @@ class Player:
                 self.delta_frame = 0
                 self.launch()
 
-        screen.blit(self.img, (self.x - game_window.left, self.y - game_window.top, self.w, self.h), (self.frame_width * self.current_frame, 0, self.frame_width, self.frame_height))
+        x = self.x - self.img_x - game_window.left
+        y = self.y - self.img_y - game_window.top
+        area = (self.frame_width * self.current_frame, 0, self.frame_width, self.frame_height)
+
+        screen.blit(self.img, (x, y, self.w, self.h), area)
 
     def update(self):
         self.update_velocity()
@@ -101,7 +109,7 @@ class Player:
 
     def check_object_collision(self):
         for platform in terrain.platforms:
-            box_collision(self.box, platform.box)
+            check_collision(self, platform)
 
     def check_terrain_collision(self):
         if (self.state != 'launched' and self.state != 'flying') or terrain.highest > self.y + self.h:
@@ -110,7 +118,7 @@ class Player:
         highest_y = terrain.highest_in_range(self.x, self.x + self.w)
 
         if self.y + self.h > highest_y:
-            setup()
+            player.die()
 
     def to_platform_center(self):
         dist = center_x(self.platform) - center_x(self)
@@ -122,35 +130,21 @@ class Player:
             if direction * center_x(self) > direction * center_x(self.platform):
                 self.x = center_x(self.platform) - self.w / 2
 
-class BoundingBox:
-    def __init__(self, parent, relative_x, relative_y, w, h):
-        self.parent = parent
-
-        self.relative_x = relative_x
-        self.relative_y = relative_y
-        self.w = w
-        self.h = h
-
-        boxes.append(self)
+    def reset(self):
+        terrain.platforms = [self.platform]
+        terrain.lines = [self.platform.line]
+        self.y = self.platform.y - self.h
+        self.vy = 0
+        self.vx = 0
+        self.state = 'landed'
+        self.fuel = 6
     
-    def __setattr__(self, name, value):
-        if name == 'x':
-            self.parent.x += value - self.x
-        elif name == 'y':
-            self.parent.y += value - self.y
-        else:
-            super().__setattr__(name, value)
+    def die(self):
+        self.reset()
 
-    def __getattribute__(self, name):
-        if name == 'x':
-            return self.parent.x + self.relative_x
-        elif name == 'y':
-            return self.parent.y + self.relative_y
-        else:
-            return super().__getattribute__(name)
-    
-    def draw(self):
-        pygame.draw.rect(screen, 'red', (self.x - game_window.left, self.y - game_window.top, self.w, self.h), 1)
+        self.x = center_x(self.platform) - self.w / 2
+        self.delta_frame = 0
+        self.current_frame = 0
 
 class Terrain:
     def __init__(self):
@@ -173,24 +167,35 @@ class Terrain:
             platform.draw()
     
     def highest_in_range(self, x_start, x_stop):
-        y_values = []
+        lines = self.lines_in_range(x_start, x_stop)
+        highest = float('inf')
+
+        for i in range(len(lines)):
+            line = lines[i]
+
+            if i == 0:
+                highest = min(highest, line.get_y(x_start), line.y2)
+            elif i == len(lines) - 1:
+                highest = min(highest, line.y1, line.get_y(x_stop))
+            else:
+                highest = min(highest, line.y1, line.y2)
+
+        return highest
+    
+    def lines_in_range(self, x_start, x_stop):
+        lines = []
 
         index = 0
         line = self.lines[index]
 
         while line.x1 <= x_stop:
             if line.x2 >= x_start:
-                if len(y_values) == 0:
-                    y_values.extend((line.get_y(x_start), line.y2))
-                elif line.x2 > x_stop:
-                    y_values.extend((line.y1, line.get_y(x_stop)))
-                else:
-                    y_values.extend((line.y1, line.y2))
+                lines.append(line)
 
             index += 1
             line = self.lines[index]
 
-        return min(y_values)
+        return lines
 
 class Spring:
     def __init__(self, x, y):
@@ -287,22 +292,18 @@ class Platform:
 
         self.seed_offset = seed_offset
 
-        self.box = BoundingBox(self, 0, 0, self.w, self.h)
+        self.line = terrain.lines_in_range(self.x, self.x + self.w)[0]
 
     def draw(self):
         pygame.draw.rect(screen, 'green', (self.x - game_window.left, self.y - game_window.top, self.w, self.h))
 
     def resolve_collision(self):
-        if player.vy < player.max_landing_speed:
-            player.box.y = self.box.y - player.box.h
-            player.vy = 0
-            player.vx = 0
-            player.state = 'landed'
-            player.platform = self
-            player.delta_frame = -1
-            player.fuel = 6
-        else:
-            setup()
+        if player.vy > player.max_landing_speed:
+            return player.die()
+
+        player.platform = self
+        player.delta_frame = -1
+        player.reset()
 
 class LineGenerator:
     def __init__(self, terrain, window_offset):
@@ -412,13 +413,15 @@ class Line:
 
 class GameWindow:
     def __init__(self):
-        self.left = -200
+        self.spacing = 200
+
+        self.left = -self.spacing
         self.right = self.left + display_size[0]
         self.top = 0
         self.bottom = self.top + display_size[1]
 
     def update(self):
-        self.left = player.x - 200
+        self.left = player.x - self.spacing
         self.right = self.left + display_size[0]
         self.top = center_y(player) - display_size[1] / 2
         self.bottom = self.left + display_size[1]
@@ -507,11 +510,11 @@ class FuelGUI:
 
             pygame.draw.polygon(screen, 'white', points)
 
-def box_collision(box1, box2):
-    check_x = box1.x + box1.w > box2.x and box1.x < box2.x + box2.w
-    check_y = box1.y + box1.h > box2.y and box1.y < box2.y + box2.h
+def check_collision(obj1, obj2):
+    check_x = obj1.x + obj1.w > obj2.x and obj1.x < obj2.x + obj2.w
+    check_y = obj1.y + obj1.h > obj2.y and obj1.y < obj2.y + obj2.h
     if check_x and check_y:
-        box2.parent.resolve_collision()
+        obj2.resolve_collision()
 
 def random_float(max, min, seed_offset = 0):
     random.seed(seed + seed_offset)
@@ -523,24 +526,6 @@ def center_x(obj):
 def center_y(obj):
     return obj.y + obj.h / 2
 
-def setup():
-    global boxes
-    global game_window
-    global terrain
-    global player
-
-    boxes = []
-    game_window = GameWindow()
-    terrain = Terrain()
-    player = Player()
-    platform = Platform(0)
-    terrain.platforms.append(platform)
-
-    platform.x = player.w / 2 - platform.w / 2
-    platform.y = terrain.highest_in_range(platform.x, platform.x + platform.w) - platform.h
-    player.platform = platform
-    player.y = platform.y - player.h
-
 # Global Variables
 gui = GUI()
 mouse = Mouse()
@@ -550,7 +535,16 @@ dt = 0
 seed = time.time()
 frame_count = 0
 
-setup()
+game_window = GameWindow()
+terrain = Terrain()
+player = Player()
+platform = Platform(0)
+terrain.platforms.append(platform)
+
+platform.x = player.w / 2 - platform.w / 2
+platform.y = terrain.highest_in_range(platform.x, platform.x + platform.w) - platform.h
+player.platform = platform
+player.y = platform.y - player.h
 
 running = True
 while running:
@@ -558,7 +552,7 @@ while running:
         if event.type == pygame.QUIT:
             running = False
         if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
-            setup()
+            player.die()
 
     frame_count += 1
     screen.fill('black')
@@ -572,8 +566,5 @@ while running:
     gui.draw()
     terrain.draw()
     player.draw()
-
-    # for box in boxes:
-    #     box.draw()
 
     pygame.display.flip()
