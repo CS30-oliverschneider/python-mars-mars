@@ -58,7 +58,6 @@ class Player:
         x = self.x - self.img_x - game_window.left
         y = self.y - self.img_y - game_window.top
         area = (self.frame_width * self.current_frame, 0, self.frame_width, self.frame_height)
-
         screen.blit(self.img, (x, y, self.w, self.h), area)
 
     def update(self):
@@ -108,14 +107,14 @@ class Player:
         self.state = 'launched'
 
     def check_object_collision(self):
-        for platform in terrain.platforms:
+        for platform in world.platforms:
             check_collision(self, platform)
 
     def check_terrain_collision(self):
-        if (self.state != 'launched' and self.state != 'flying') or terrain.highest > self.y + self.h:
+        if (self.state != 'launched' and self.state != 'flying') or world.highest > self.y + self.h:
             return
         
-        highest_y = terrain.highest_in_range(self.x, self.x + self.w)
+        highest_y = world.highest_in_range(self.x, self.x + self.w)
 
         if self.y + self.h > highest_y:
             player.die()
@@ -131,8 +130,6 @@ class Player:
                 self.x = center_x(self.platform) - self.w / 2
 
     def reset(self):
-        terrain.platforms = [self.platform]
-        terrain.lines = [self.platform.line]
         self.y = self.platform.y - self.h
         self.vy = 0
         self.vx = 0
@@ -141,61 +138,62 @@ class Player:
     
     def die(self):
         self.reset()
-
+        world.platforms = [self.platform]
+        world.terrain_lines = [self.platform.terrain_line]
         self.x = center_x(self.platform) - self.w / 2
         self.delta_frame = 0
         self.current_frame = 0
 
-class Terrain:
+class World:
     def __init__(self):
-        self.lines = []
+        self.terrain_lines = []
         self.platforms = []
         self.highest = float('inf')
 
-        self.line_generator = LineGenerator(self, display_size[0])
+        self.terrain_line_generator = TerrainGenerator(self, 100)
         self.platform_generator = PlatformGenerator(self)
 
-        self.line_generator.generate_lines(1)
+        self.terrain_line_generator.generate_terrain_lines(1)
 
     def draw(self):
-        self.line_generator.update()
+        self.terrain_line_generator.update()
         self.platform_generator.update()
 
-        for line in self.lines:
-            line.draw()
+        for terrain_line in self.terrain_lines:
+            terrain_line.draw()
         for platform in self.platforms:
             platform.draw()
     
     def highest_in_range(self, x_start, x_stop):
-        lines = self.lines_in_range(x_start, x_stop)
+        terrain_lines = self.terrain_lines_in_range(x_start, x_stop)
         highest = float('inf')
 
-        for i in range(len(lines)):
-            line = lines[i]
+        for i in range(len(terrain_lines)):
+            terrain_line = terrain_lines[i]
 
             if i == 0:
-                highest = min(highest, line.get_y(x_start), line.y2)
-            elif i == len(lines) - 1:
-                highest = min(highest, line.y1, line.get_y(x_stop))
+                highest = min(highest, terrain_line.get_y(x_start), terrain_line.y2)
+            elif i == len(terrain_lines) - 1:
+                highest = min(highest, terrain_line.y1, terrain_line.get_y(x_stop))
             else:
-                highest = min(highest, line.y1, line.y2)
+                highest = min(highest, terrain_line.y1, terrain_line.y2)
 
         return highest
     
-    def lines_in_range(self, x_start, x_stop):
-        lines = []
+    def terrain_lines_in_range(self, x_start, x_stop):
+        terrain_lines = []
 
         index = 0
-        line = self.lines[index]
+        terrain_line = self.terrain_lines[index]
 
-        while line.x1 <= x_stop:
-            if line.x2 >= x_start:
-                lines.append(line)
+        while terrain_line.x1 <= x_stop:
+            if terrain_line.x2 >= x_start:
+                terrain_lines.append(terrain_line)
 
             index += 1
-            line = self.lines[index]
+            terrain_line = self.terrain_lines[index]
 
-        return lines
+        return terrain_lines
 
 class Spring:
     def __init__(self, x, y):
@@ -250,37 +248,41 @@ class Spring:
             self.bob_vy = 0
 
 class PlatformGenerator:
-    def __init__(self, terrain):
-        self.terrain = terrain
-        self.platforms = terrain.platforms
+    def __init__(self, world):
+        self.world = world
+        self.platforms = world.platforms
 
-        self.min_dist = 500
-        self.max_dist = 800
-        self.dist = random_float(self.max_dist, self.min_dist)
+        self.min_dist = 100
+        self.max_dist = 300
+        self.dist_right = random_float(self.max_dist, self.min_dist, 1)
+        self.dist_left = random_float(self.max_dist, self.min_dist)
 
     def update(self):
+        self.platforms = self.world.platforms
         self.add_platforms()
         self.remove_platforms()
     
     def add_platforms(self):
-        if self.platforms[-1].x + self.dist < game_window.right:
+        if self.platforms[-1].x + self.dist_right < game_window.right:
+            self.dist_right = random_float(self.max_dist, self.min_dist, self.platforms[-1].seed_offset + 1)
             new_seed_offset = self.platforms[-1].seed_offset + 1
-            new_x = self.platforms[-1].x + self.dist
+            new_x = self.platforms[-1].x + self.dist_right
             self.platforms.append(Platform(new_x, new_seed_offset))
-            
-            self.dist = random_float(self.max_dist, self.min_dist, new_seed_offset)
+            self.dist_right = random_float(self.max_dist, self.min_dist, new_seed_offset + 1)
         
-        if self.platforms[0].x + self.platforms[0].w > game_window.left:
+        if self.platforms[0].x - self.dist_left > game_window.left:
+            self.dist_left = random_float(self.max_dist, self.min_dist, self.platforms[0].seed_offset)
             new_seed_offset = self.platforms[0].seed_offset - 1
             dist = random_float(self.max_dist, self.min_dist, new_seed_offset + 1)
             new_x = self.platforms[0].x - dist
             self.platforms.insert(0, Platform(new_x, new_seed_offset))
+            self.dist_left = random_float(self.max_dist, self.min_dist, new_seed_offset)
 
     def remove_platforms(self):
-        if self.platforms[-2].x > game_window.right:
+        if self.platforms[-1].x > game_window.right:
             self.platforms.pop()
 
-        if self.platforms[1].x + self.platforms[1].w < game_window.left:
+        if self.platforms[0].x + self.platforms[0].w < game_window.left:
             self.platforms.pop(0)
 
 class Platform:
@@ -288,11 +290,11 @@ class Platform:
         self.w = 50
         self.h = 10
         self.x = x
-        self.y = terrain.highest_in_range(self.x, self.x + self.w) - self.h
+        self.y = world.highest_in_range(self.x, self.x + self.w) - self.h
 
         self.seed_offset = seed_offset
 
-        self.line = terrain.lines_in_range(self.x, self.x + self.w)[0]
+        self.terrain_line = world.terrain_lines_in_range(self.x, self.x + self.w)[0]
 
     def draw(self):
         pygame.draw.rect(screen, 'green', (self.x - game_window.left, self.y - game_window.top, self.w, self.h))
@@ -305,10 +307,10 @@ class Platform:
         player.delta_frame = -1
         player.reset()
 
-class LineGenerator:
-    def __init__(self, terrain, window_offset):
-        self.terrain = terrain
-        self.lines = terrain.lines
+class TerrainGenerator:
+    def __init__(self, world, window_offset):
+        self.world = world
+        self.terrain_lines = world.terrain_lines
 
         self.window_offset = window_offset
 
@@ -318,75 +320,77 @@ class LineGenerator:
         self.max_angle = 1
         self.max_delta_angle = 0.5
 
-        self.lines.append(Line(game_window.left - window_offset, 700, game_window.left - window_offset, 700, 0))
+        start = TerrainLine(game_window.left - window_offset, 700, game_window.left - window_offset, 700, -1)
+        self.terrain_lines.append(self.new_terrain_line(start, 1))
 
     def update(self):
-        self.add_lines()
-        self.remove_lines()
+        self.terrain_lines = self.world.terrain_lines
+        self.add_terrain_lines()
+        self.remove_terrain_lines()
 
-    def generate_lines(self, direction):
+    def generate_terrain_lines(self, direction):
         if direction == 1:
             index = -1
-            line = self.lines[index]
-            x = line.x2
+            terrain_line = self.terrain_lines[index]
+            x = terrain_line.x2
         elif direction == -1:
             index = 0
-            line = self.lines[index]
-            x = line.x1
+            terrain_line = self.terrain_lines[index]
+            x = terrain_line.x1
 
         while x >= game_window.left - self.window_offset and x <= game_window.right + self.window_offset:
-            line = self.new_line(self.lines[index], direction)
+            terrain_line = self.new_terrain_line(self.terrain_lines[index], direction)
 
             if direction == 1:
-                self.lines.append(line)
-                x = line.x2
+                self.terrain_lines.append(terrain_line)
+                x = terrain_line.x2
             elif direction == -1:
-                self.lines.insert(0, line)
-                x = line.x1
+                self.terrain_lines.insert(0, terrain_line)
+                x = terrain_line.x1
 
-            highest = min(line.y1, line.y2)
-            if highest < self.terrain.highest:
-                self.terrain.highest = highest
+            highest = min(terrain_line.y1, terrain_line.y2)
+            if highest < self.world.highest:
+                self.world.highest = highest
 
-    def new_line(self, last_line, direction):
-        seed_offset = last_line.seed_offset + direction
+    def new_terrain_line(self, last_terrain_line, direction):
+        seed_offset = last_terrain_line.seed_offset + direction
 
         delta_angle = random_float(-self.max_delta_angle, self.max_delta_angle, seed_offset)
-        new_angle = last_line.angle + delta_angle
+        new_angle = last_terrain_line.angle + delta_angle
 
         if new_angle < self.min_angle or new_angle > self.max_angle:
-            new_angle = last_line.angle - delta_angle
+            new_angle = last_terrain_line.angle - delta_angle
 
         new_length = random_float(self.max_length, self.min_length, seed_offset)
 
         if direction == 1:
-            x1 = last_line.x2
-            y1 = last_line.y2
+            x1 = last_terrain_line.x2
+            y1 = last_terrain_line.y2
 
             x2 = x1 + new_length * math.cos(new_angle)
             y2 = y1 + new_length * math.sin(new_angle)
         elif direction == -1:
-            x2 = last_line.x1
-            y2 = last_line.y1
+            x2 = last_terrain_line.x1
+            y2 = last_terrain_line.y1
 
             x1 = x2 - new_length * math.cos(new_angle)
             y1 = y2 - new_length * math.sin(new_angle)
 
-        return Line(x1, y1, x2, y2, seed_offset)
+        return TerrainLine(x1, y1, x2, y2, seed_offset)
     
-    def add_lines(self):
-        if self.lines[-1].x2 < game_window.right + self.window_offset:
-            self.generate_lines(1)
-        elif self.lines[0].x1 > game_window.left - self.window_offset:
-            self.generate_lines(-1)
+    def add_terrain_lines(self):
+        if self.terrain_lines[-1].x2 < game_window.right + self.window_offset:
+            self.generate_terrain_lines(1)
+        if self.terrain_lines[0].x1 > game_window.left - self.window_offset:
+            self.generate_terrain_lines(-1)
 
-    def remove_lines(self):
-        if self.lines[0].x2 < game_window.left - self.window_offset:
-            self.lines.pop(0)
-        elif self.lines[-1].x1 > game_window.right + self.window_offset:
-            self.lines.pop(-1)
+    def remove_terrain_lines(self):
+        if self.terrain_lines[0].x2 < game_window.left - self.window_offset:
+            self.terrain_lines.pop(0)
+        if self.terrain_lines[-1].x1 > game_window.right + self.window_offset:
+            self.terrain_lines.pop(-1)
 
-class Line:
+class TerrainLine:
     def __init__(self, x1, y1, x2, y2, seed_offset):
         self.x1 = x1
         self.y1 = y1
@@ -534,18 +538,19 @@ clock = pygame.time.Clock()
 dt = 0
 seed = time.time()
 frame_count = 0
-
 game_window = GameWindow()
-terrain = Terrain()
+world = World()
 player = Player()
 platform = Platform(0)
-terrain.platforms.append(platform)
+world.platforms.append(platform)
 
+# Initial Setup
 platform.x = player.w / 2 - platform.w / 2
-platform.y = terrain.highest_in_range(platform.x, platform.x + platform.w) - platform.h
+platform.y = world.highest_in_range(platform.x, platform.x + platform.w) - platform.h
 player.platform = platform
 player.y = platform.y - player.h
 
+# Main Loop
 running = True
 while running:
     for event in pygame.event.get():
@@ -564,7 +569,7 @@ while running:
     game_window.update()
 
     gui.draw()
-    terrain.draw()
+    world.draw()
     player.draw()
 
     pygame.display.flip()
