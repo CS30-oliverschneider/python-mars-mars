@@ -1,12 +1,13 @@
 import random
 import math
 import pygame
-import time
+import noise
 
 pygame.init()
 display_size = (900, 900)
 screen = pygame.display.set_mode(display_size)
-pygame.display.set_caption('Mars Mars')
+pygame.display.set_caption("Mars Mars")
+
 
 class Player:
     def __init__(self):
@@ -15,7 +16,7 @@ class Player:
         self.w = 40
         self.h = 40
 
-        self.img = pygame.image.load('img/spritesheet.png')
+        self.img = pygame.image.load("img/spritesheet.png")
         self.img_x = 0
         self.img_y = 0
         self.img_w = self.w
@@ -30,7 +31,7 @@ class Player:
         self.platform = None
         self.slide_speed = 2
 
-        self.state = 'landed'
+        self.state = "landed"
 
         self.vx = 0
         self.vy = 0
@@ -57,7 +58,12 @@ class Player:
 
         x = self.x - self.img_x - game_window.left
         y = self.y - self.img_y - game_window.top
-        area = (self.frame_width * self.current_frame, 0, self.frame_width, self.frame_height)
+        area = (
+            self.frame_width * self.current_frame,
+            0,
+            self.frame_width,
+            self.frame_height,
+        )
         screen.blit(self.img, (x, y, self.w, self.h), area)
 
     def update(self):
@@ -72,25 +78,25 @@ class Player:
         self.y += self.vy * dt
 
     def update_velocity(self):
-        if self.state == 'landed':
+        if self.state == "landed":
             if not mouse.down:
-                self.state = 'ready'
+                self.state = "ready"
             return
-        elif self.state == 'ready':
+        elif self.state == "ready":
             if mouse.down:
                 self.delta_frame = 1
             return
-        
+
         self.vy += gravity
 
-        if self.state == 'launched':
+        if self.state == "launched":
             if not mouse.down:
-                self.state = 'flying'
+                self.state = "flying"
             return
 
         if self.fuel <= 0:
             return
-    
+
         if mouse.left:
             self.vy -= self.y_thrust
             self.vx += self.x_thrust
@@ -104,16 +110,16 @@ class Player:
     def launch(self):
         self.vx = self.launch_speed_x
         self.vy = self.launch_speed_y
-        self.state = 'launched'
+        self.state = "launched"
 
     def check_object_collision(self):
         for platform in world.platforms:
             check_collision(self, platform)
 
     def check_terrain_collision(self):
-        if (self.state != 'launched' and self.state != 'flying') or world.highest > self.y + self.h:
+        if (self.state != "launched" and self.state != "flying") or world.highest > self.y + self.h:
             return
-        
+
         highest_y = world.highest_in_range(self.x, self.x + self.w)
 
         if self.y + self.h > highest_y:
@@ -122,7 +128,7 @@ class Player:
     def to_platform_center(self):
         dist = center_x(self.platform) - center_x(self)
 
-        if (self.state == 'landed' or self.state == 'ready') and dist != 0:
+        if (self.state == "landed" or self.state == "ready") and dist != 0:
             direction = dist / abs(dist)
             self.x += self.slide_speed * direction
 
@@ -133,67 +139,84 @@ class Player:
         self.y = self.platform.y - self.h
         self.vy = 0
         self.vx = 0
-        self.state = 'landed'
+        self.state = "landed"
         self.fuel = 6
-    
+
     def die(self):
         self.reset()
-        world.platforms = [self.platform]
-        world.terrain_lines = [self.platform.terrain_line]
+
+        world.platforms.clear()
+        world.platforms.append(self.platform)
+        world.terrain_points.clear()
+        world.terrain_points.append(self.platform.terrain_point)
+
         self.x = center_x(self.platform) - self.w / 2
         self.delta_frame = 0
         self.current_frame = 0
 
+
 class World:
     def __init__(self):
-        self.terrain_lines = []
+        self.terrain_points = []
         self.platforms = []
-        self.highest = float('inf')
+        self.highest = float("inf")
 
-        self.terrain_line_generator = TerrainGenerator(self, 100)
+        self.terrain_generator = TerrainGenerator(self)
         self.platform_generator = PlatformGenerator(self)
 
-        self.terrain_line_generator.generate_terrain_lines(1)
+        self.terrain_generator.generate_terrain_points(1)
 
     def draw(self):
-        self.terrain_line_generator.update()
+        self.terrain_generator.update()
         self.platform_generator.update()
 
-        for terrain_line in self.terrain_lines:
-            terrain_line.draw()
+        draw_points = [
+            (point.x - game_window.left, point.y - game_window.top) for point in self.terrain_points
+        ]
+        pygame.draw.lines(screen, "white", False, draw_points)
+
         for platform in self.platforms:
             platform.draw()
-    
+
     def highest_in_range(self, x_start, x_stop):
-        terrain_lines = self.terrain_lines_in_range(x_start, x_stop)
-        highest = float('inf')
+        y_values = []
 
-        for i in range(len(terrain_lines)):
-            terrain_line = terrain_lines[i]
+        for i in range(len(self.terrain_points)):
+            point = self.terrain_points[i]
 
-            if i == 0:
-                highest = min(highest, terrain_line.get_y(x_start), terrain_line.y2)
-            elif i == len(terrain_lines) - 1:
-                highest = min(highest, terrain_line.y1, terrain_line.get_y(x_stop))
-            else:
-                highest = min(highest, terrain_line.y1, terrain_line.y2)
+            if point.x > x_stop and self.terrain_points[i - 1].x < x_start:
+                y_values.append(self.get_y(x_start, i, i - 1))
+                y_values.append(self.get_y(x_stop, i, i - 1))
+                break
+            elif point.x < x_start:
+                continue
+            elif point.x > x_stop:
+                break
 
-        return highest
-    
-    def terrain_lines_in_range(self, x_start, x_stop):
-        terrain_lines = []
+            if i < 0:
+                print("too small")
+            if i + 1 > len(self.terrain_points) - 1:
+                print("too big")
 
-        index = 0
-        terrain_line = self.terrain_lines[index]
+            if len(y_values) == 0:
+                y_values.append(self.get_y(x_start, i, i - 1))
+            if self.terrain_points[i + 1].x > x_stop:
+                y_values.append(self.get_y(x_stop, i, i + 1))
 
-        while terrain_line.x1 <= x_stop:
-            if terrain_line.x2 >= x_start:
-                terrain_lines.append(terrain_line)
+            y_values.append(point.y)
 
-            index += 1
-            terrain_line = self.terrain_lines[index]
+        if len(y_values) == 0:
+            print(x_start, x_stop)
+            for point in world.terrain_points:
+                print(point.x)
 
-        return terrain_lines
+        return min(y_values)
+
+    def get_y(self, x, index1, index2):
+        p1 = self.terrain_points[index1]
+        p2 = self.terrain_points[index2]
+        return (p2.y - p1.y) / (p2.x - p1.x) * (x - p2.x) + p2.y
+
 
 class Spring:
     def __init__(self, x, y):
@@ -212,21 +235,25 @@ class Spring:
         self.rest_length = self.stop_length - self.acceleration_up * self.bob_mass
 
     def draw(self):
-        pygame.draw.line(screen, 'blue', (self.x, self.y), (self.bob_x, self.bob_y), 5)
-        pygame.draw.circle(screen, 'blue', (self.bob_x, self.bob_y), 20)
+        pygame.draw.line(screen, "blue", (self.x, self.y), (self.bob_x, self.bob_y), 5)
+        pygame.draw.circle(screen, "blue", (self.bob_x, self.bob_y), 20)
 
     def update(self):
         self.update_velocity()
         self.move()
 
     def update_velocity(self):
-        length = math.sqrt((self.bob_x - self.x)**2 + (self.bob_y - self.y)**2)
+        length = math.sqrt((self.bob_x - self.x) ** 2 + (self.bob_y - self.y) ** 2)
         stretch = length - self.rest_length
         sine = (self.bob_x - self.x) / length
         cosine = (self.bob_y - self.y) / length
 
         ax = -1 / self.bob_mass * stretch * sine - self.damping / self.bob_mass * self.bob_vx
-        ay = -1 / self.bob_mass * stretch * cosine - self.damping / self.bob_mass * self.bob_vy - self.acceleration_up
+        ay = (
+            -1 / self.bob_mass * stretch * cosine
+            - self.damping / self.bob_mass * self.bob_vy
+            - self.acceleration_up
+        )
 
         self.bob_vx += ax
         self.bob_vy += ay
@@ -247,31 +274,32 @@ class Spring:
             self.bob_vx = 0
             self.bob_vy = 0
 
+
 class PlatformGenerator:
     def __init__(self, world):
         self.world = world
         self.platforms = world.platforms
 
-        self.min_dist = 100
-        self.max_dist = 300
+        self.min_dist = 500
+        self.max_dist = 800
         self.dist_right = random_float(self.max_dist, self.min_dist, 1)
         self.dist_left = random_float(self.max_dist, self.min_dist)
 
     def update(self):
-        self.platforms = self.world.platforms
         self.add_platforms()
         self.remove_platforms()
-    
+
     def add_platforms(self):
+        self.dist_right = random_float(self.max_dist, self.min_dist, self.platforms[-1].seed_offset + 1)
+        self.dist_left = random_float(self.max_dist, self.min_dist, self.platforms[0].seed_offset)
+
         if self.platforms[-1].x + self.dist_right < game_window.right:
-            self.dist_right = random_float(self.max_dist, self.min_dist, self.platforms[-1].seed_offset + 1)
             new_seed_offset = self.platforms[-1].seed_offset + 1
             new_x = self.platforms[-1].x + self.dist_right
             self.platforms.append(Platform(new_x, new_seed_offset))
             self.dist_right = random_float(self.max_dist, self.min_dist, new_seed_offset + 1)
-        
-        if self.platforms[0].x - self.dist_left > game_window.left:
-            self.dist_left = random_float(self.max_dist, self.min_dist, self.platforms[0].seed_offset)
+
+        if self.platforms[0].x + self.platforms[0].w - self.dist_left > game_window.left:
             new_seed_offset = self.platforms[0].seed_offset - 1
             dist = random_float(self.max_dist, self.min_dist, new_seed_offset + 1)
             new_x = self.platforms[0].x - dist
@@ -285,8 +313,9 @@ class PlatformGenerator:
         if self.platforms[0].x + self.platforms[0].w < game_window.left:
             self.platforms.pop(0)
 
+
 class Platform:
-    def __init__(self, x, seed_offset = 0):
+    def __init__(self, x, seed_offset=0):
         self.w = 50
         self.h = 10
         self.x = x
@@ -294,10 +323,17 @@ class Platform:
 
         self.seed_offset = seed_offset
 
-        self.terrain_line = world.terrain_lines_in_range(self.x, self.x + self.w)[0]
+        for point in world.terrain_points:
+            if point.x > self.x:
+                self.terrain_point = point
+                break
 
     def draw(self):
-        pygame.draw.rect(screen, 'green', (self.x - game_window.left, self.y - game_window.top, self.w, self.h))
+        pygame.draw.rect(
+            screen,
+            "green",
+            (self.x - game_window.left, self.y - game_window.top, self.w, self.h),
+        )
 
     def resolve_collision(self):
         if player.vy > player.max_landing_speed:
@@ -307,113 +343,90 @@ class Platform:
         player.delta_frame = -1
         player.reset()
 
+
 class TerrainGenerator:
-    def __init__(self, world, window_offset):
+    def __init__(self, world):
         self.world = world
-        self.terrain_lines = world.terrain_lines
+        self.terrain_points = world.terrain_points
 
-        self.window_offset = window_offset
+        self.window_offset = 50
 
-        self.min_length = 10
-        self.max_length = 50
-        self.min_angle = -1
-        self.max_angle = 1
-        self.max_delta_angle = 0.5
+        self.min_dist_x = 10
+        self.max_dist_x = 50
+        self.octaves = 4
+        self.persistence = 0.6
+        self.lacunarity = 2
+        self.x_scale = 0.001
+        self.y_scale = 500
 
-        start = TerrainLine(game_window.left - window_offset, 700, game_window.left - window_offset, 700, -1)
-        self.terrain_lines.append(self.new_terrain_line(start, 1))
+        start = TerrainPoint(game_window.left - self.window_offset, 0, -1)
+        self.terrain_points.append(self.new_terrain_point(start, 1))
 
     def update(self):
-        self.terrain_lines = self.world.terrain_lines
-        self.add_terrain_lines()
-        self.remove_terrain_lines()
+        self.add_terrain_points()
+        self.remove_terrain_points()
 
-    def generate_terrain_lines(self, direction):
+    def generate_terrain_points(self, direction):
         if direction == 1:
             index = -1
-            terrain_line = self.terrain_lines[index]
-            x = terrain_line.x2
         elif direction == -1:
             index = 0
-            terrain_line = self.terrain_lines[index]
-            x = terrain_line.x1
+
+        terrain_point = self.terrain_points[index]
+        x = terrain_point.x
 
         while x >= game_window.left - self.window_offset and x <= game_window.right + self.window_offset:
-            terrain_line = self.new_terrain_line(self.terrain_lines[index], direction)
+            terrain_point = self.new_terrain_point(self.terrain_points[index], direction)
+            x = terrain_point.x
 
             if direction == 1:
-                self.terrain_lines.append(terrain_line)
-                x = terrain_line.x2
+                self.terrain_points.append(terrain_point)
             elif direction == -1:
-                self.terrain_lines.insert(0, terrain_line)
-                x = terrain_line.x1
+                self.terrain_points.insert(0, terrain_point)
 
-            highest = min(terrain_line.y1, terrain_line.y2)
-            if highest < self.world.highest:
-                self.world.highest = highest
+            if terrain_point.y < self.world.highest:
+                self.world.highest = terrain_point.y
 
-    def new_terrain_line(self, last_terrain_line, direction):
-        seed_offset = last_terrain_line.seed_offset + direction
-
-        delta_angle = random_float(-self.max_delta_angle, self.max_delta_angle, seed_offset)
-        new_angle = last_terrain_line.angle + delta_angle
-
-        if new_angle < self.min_angle or new_angle > self.max_angle:
-            new_angle = last_terrain_line.angle - delta_angle
-
-        new_length = random_float(self.max_length, self.min_length, seed_offset)
+    def new_terrain_point(self, last_terrain_point, direction):
+        seed_offset = last_terrain_point.seed_offset + direction
 
         if direction == 1:
-            x1 = last_terrain_line.x2
-            y1 = last_terrain_line.y2
-
-            x2 = x1 + new_length * math.cos(new_angle)
-            y2 = y1 + new_length * math.sin(new_angle)
+            dist_x = random_float(self.max_dist_x, self.min_dist_x, seed_offset)
+            x = last_terrain_point.x + dist_x
         elif direction == -1:
-            x2 = last_terrain_line.x1
-            y2 = last_terrain_line.y1
+            dist_x = random_float(self.max_dist_x, self.min_dist_x, seed_offset + 1)
+            x = last_terrain_point.x - dist_x
 
-            x1 = x2 - new_length * math.cos(new_angle)
-            y1 = y2 - new_length * math.sin(new_angle)
+        y = self.perlin_noise(x)
 
-        return TerrainLine(x1, y1, x2, y2, seed_offset)
-    
-    def add_terrain_lines(self):
-        if self.terrain_lines[-1].x2 < game_window.right + self.window_offset:
-            self.generate_terrain_lines(1)
-        if self.terrain_lines[0].x1 > game_window.left - self.window_offset:
-            self.generate_terrain_lines(-1)
+        return TerrainPoint(x, y, seed_offset)
 
-    def remove_terrain_lines(self):
-        if self.terrain_lines[0].x2 < game_window.left - self.window_offset:
-            self.terrain_lines.pop(0)
-        if self.terrain_lines[-1].x1 > game_window.right + self.window_offset:
-            self.terrain_lines.pop(-1)
+    def perlin_noise(self, x):
+        result = noise.pnoise1(x * self.x_scale + seed, self.octaves, self.persistence, self.lacunarity)
+        return result * self.y_scale
 
-class TerrainLine:
-    def __init__(self, x1, y1, x2, y2, seed_offset):
-        self.x1 = x1
-        self.y1 = y1
-        self.x2 = x2
-        self.y2 = y2
+    def add_terrain_points(self):
+        if self.terrain_points[-1].x < game_window.right + self.window_offset:
+            self.generate_terrain_points(1)
+        if self.terrain_points[0].x > game_window.left - self.window_offset:
+            self.generate_terrain_points(-1)
+
+    def remove_terrain_points(self):
+        if self.terrain_points[1].x < game_window.left - self.window_offset:
+            self.terrain_points.pop(0)
+        if self.terrain_points[-2].x > game_window.right + self.window_offset:
+            self.terrain_points.pop(-1)
+
+
+class TerrainPoint:
+    def __init__(self, x, y, seed_offset):
+        self.x = x
+        self.y = y
 
         self.seed_offset = seed_offset
 
-        self.angle = math.atan2(y2 - y1, x2 - x1)
-        self.dx = self.x2 - self.x1
+        self.color = "white"
 
-        self.color = 'white'
-
-    def draw(self):
-        p1 = (self.x1 - game_window.left, self.y1 - game_window.top)
-        p2 = (self.x2 - game_window.left, self.y2 - game_window.top)
-        pygame.draw.line(screen, self.color, p1, p2)
-
-    def get_y(self, x):
-        if x < self.x1 or x > self.x2:
-            return float('inf')
-        else:
-            return ((self.y2 - self.y1) / (self.x2 - self.x1)) * (x - self.x1) + self.y1
 
 class GameWindow:
     def __init__(self):
@@ -430,6 +443,7 @@ class GameWindow:
         self.top = center_y(player) - display_size[1] / 2
         self.bottom = self.left + display_size[1]
 
+
 class Mouse:
     def __init__(self):
         self.left = False
@@ -442,6 +456,7 @@ class Mouse:
         self.left = pressed[0]
         self.right = pressed[2]
         self.down = self.left or self.right
+
 
 class GUI:
     def __init__(self):
@@ -457,11 +472,12 @@ class GUI:
         for element in self.elements:
             element.update()
 
+
 class FuelGUI:
     def __init__(self):
         self.x = 30
         self.y = 30
-        self.img = pygame.image.load('./img/fuel.png')
+        self.img = pygame.image.load("./img/fuel.png")
 
     def draw(self):
         screen.blit(self.img, (self.x, self.y))
@@ -481,12 +497,12 @@ class FuelGUI:
 
             return points
 
-        center = (self.x + 18, self.y + 17)    
+        center = (self.x + 18, self.y + 17)
         big_hex = hex_points(38, center)
         small_hex = hex_points(30, center)
-        
-        pygame.draw.polygon(screen, 'white', big_hex, 1)
-        pygame.draw.polygon(screen, 'white', small_hex, 1)
+
+        pygame.draw.polygon(screen, "white", big_hex, 1)
+        pygame.draw.polygon(screen, "white", small_hex, 1)
 
         for n in range(6):
             index1 = n
@@ -507,12 +523,23 @@ class FuelGUI:
 
                 big_hex_point = between_points(big_hex[index1], big_hex[index2])
                 small_hex_point = between_points(small_hex[index1], small_hex[index2])
-                
-                points = [big_hex_point, big_hex[index2], small_hex[index2], small_hex_point]
-            else:
-                points = [big_hex[index1], big_hex[index2], small_hex[index2], small_hex[index1]]
 
-            pygame.draw.polygon(screen, 'white', points)
+                points = [
+                    big_hex_point,
+                    big_hex[index2],
+                    small_hex[index2],
+                    small_hex_point,
+                ]
+            else:
+                points = [
+                    big_hex[index1],
+                    big_hex[index2],
+                    small_hex[index2],
+                    small_hex[index1],
+                ]
+
+            pygame.draw.polygon(screen, "white", points)
+
 
 def check_collision(obj1, obj2):
     check_x = obj1.x + obj1.w > obj2.x and obj1.x < obj2.x + obj2.w
@@ -520,15 +547,19 @@ def check_collision(obj1, obj2):
     if check_x and check_y:
         obj2.resolve_collision()
 
-def random_float(max, min, seed_offset = 0):
+
+def random_float(max, min, seed_offset=0):
     random.seed(seed + seed_offset)
     return random.random() * (max - min) + min
+
 
 def center_x(obj):
     return obj.x + obj.w / 2
 
+
 def center_y(obj):
     return obj.y + obj.h / 2
+
 
 # Global Variables
 gui = GUI()
@@ -536,7 +567,7 @@ mouse = Mouse()
 gravity = 3
 clock = pygame.time.Clock()
 dt = 0
-seed = time.time()
+seed = random.random() * 10000
 frame_count = 0
 game_window = GameWindow()
 world = World()
@@ -560,7 +591,7 @@ while running:
             player.die()
 
     frame_count += 1
-    screen.fill('black')
+    screen.fill("black")
     dt = clock.tick(60) / 1000
 
     mouse.update()
