@@ -473,6 +473,45 @@ class GUI:
             element.update()
 
 
+class Particle:
+    def __init__(self, x, y, vx, vy, rotate, grow, shrink_start, shrink_frames):
+        self.x = x
+        self.y = y
+        self.vx = vx
+        self.vy = vy
+        self.rotate = rotate
+        self.grow = grow
+        self.shrink_start = shrink_start
+        self.shrink_frames = shrink_frames
+
+        self.rotation = 0
+        self.radius = 0
+        self.frame_count = 0
+        self.max_radius = 0
+
+    def draw(self):
+        if self.radius < 0:
+            return
+        
+        points = hexagon_points(self.x, self.y, self.radius, self.rotation)
+        pygame.draw.polygon(screen, 'white', points)
+
+    def update(self):
+        self.x += self.vx
+        self.y += self.vy
+        self.rotation += self.rotate
+
+        if self.frame_count < self.shrink_start:
+            self.radius += self.grow
+            self.max_radius = self.radius
+        else:
+            self.radius -= self.max_radius / self.shrink_frames
+
+        if self.radius < 0:
+            particles.remove(self)
+
+        self.frame_count += 1
+
 class FuelGUI:
     def __init__(self):
         self.x = 30
@@ -484,8 +523,8 @@ class FuelGUI:
 
     def update(self):
         center = (self.x + 18, self.y + 17)
-        big_hex = hexagon_points(center, 38)
-        small_hex = hexagon_points(center, 30)
+        big_hex = hexagon_points(center[0], center[1], 38)
+        small_hex = hexagon_points(center[0], center[1], 30)
 
         pygame.draw.polygon(screen, "white", big_hex, 1)
         pygame.draw.polygon(screen, "white", small_hex, 1)
@@ -547,13 +586,13 @@ def center_y(obj):
     return obj.y + obj.h / 2
 
 
-def hexagon_points(center, r):
+def hexagon_points(center_x, center_y, radius, rotation = 0):
     points = []
 
     for n in range(6):
-        angle = (120 - n * 60) * math.pi / 180
-        x = center[0] + r * math.cos(angle)
-        y = center[1] + r * math.sin(angle)
+        angle = (n * 60 - 120) * math.pi / 180 + rotation
+        x = center_x + radius * math.cos(angle)
+        y = center_y + radius * math.sin(angle)
         points.append((x, y))
 
     return points
@@ -565,7 +604,7 @@ mouse = Mouse()
 gravity = 3
 clock = pygame.time.Clock()
 dt = 0
-seed = random.random() * 10000
+seed = random.random() * 100000
 frame_count = 0
 game_window = GameWindow()
 world = World()
@@ -600,5 +639,9 @@ while running:
     gui.draw()
     world.draw()
     player.draw()
+
+    for particle in particles:
+        particle.update()
+        particle.draw()
 
     pygame.display.flip()
