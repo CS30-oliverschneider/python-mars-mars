@@ -483,23 +483,9 @@ class FuelGUI:
         screen.blit(self.img, (self.x, self.y))
 
     def update(self):
-        def hex_points(length, center):
-            points = [(center[0] - length, center[1])]
-
-            for i in range(1, 6):
-                angle = -120 * math.pi / 180 + i * 60 * math.pi / 180
-                x = length * math.cos(angle) + points[i - 1][0]
-                y = length * math.sin(angle) + points[i - 1][1]
-
-                points.append((x, y))
-
-            points.append(points.pop(0))
-
-            return points
-
         center = (self.x + 18, self.y + 17)
-        big_hex = hex_points(38, center)
-        small_hex = hex_points(30, center)
+        big_hex = hexagon_points(center, 38)
+        small_hex = hexagon_points(center, 30)
 
         pygame.draw.polygon(screen, "white", big_hex, 1)
         pygame.draw.polygon(screen, "white", small_hex, 1)
@@ -559,6 +545,18 @@ def center_x(obj):
 
 def center_y(obj):
     return obj.y + obj.h / 2
+
+
+def hexagon_points(center, r):
+    points = []
+
+    for n in range(6):
+        angle = (120 - n * 60) * math.pi / 180
+        x = center[0] + r * math.cos(angle)
+        y = center[1] + r * math.sin(angle)
+        points.append((x, y))
+
+    return points
 
 
 # Global Variables
