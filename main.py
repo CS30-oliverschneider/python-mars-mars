@@ -636,7 +636,6 @@ def create_particles(options):
         rotation = get_random(rotation_range)
         growth = get_random(growth_range)
 
-        global particles
         particles.append(Particle(x, y, vx, vy, rotation, growth, grow_frames, shrink_frames))
 
 # Global Variables
