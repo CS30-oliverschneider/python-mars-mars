@@ -509,7 +509,7 @@ class Particle:
         if self.radius < 0:
             return
         
-        points = hexagon_points(self.x, self.y, self.radius, self.rotation)
+        points = hexagon_points(self.x - game_window.left, self.y - game_window.top, self.radius, self.rotation)
         pygame.draw.polygon(screen, 'white', points)
 
     def update(self):
@@ -636,6 +636,7 @@ def create_particles(options):
         rotation = get_random(rotation_range)
         growth = get_random(growth_range)
 
+        global particles
         particles.append(Particle(x, y, vx, vy, rotation, growth, grow_frames, shrink_frames))
 
 # Global Variables
