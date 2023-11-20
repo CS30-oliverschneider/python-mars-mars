@@ -50,8 +50,9 @@ class Player:
         if self.delta_frame != 0 and frame_count % self.anim_speed == 0:
             self.current_frame += self.delta_frame
 
-            if self.current_frame == 0:
+            if self.current_frame <= 0:
                 self.delta_frame = 0
+                self.current_frame = 0
             elif self.current_frame == 6:
                 self.delta_frame = 0
                 self.launch()
@@ -111,6 +112,22 @@ class Player:
         self.vx = self.launch_speed_x
         self.vy = self.launch_speed_y
         self.state = "launched"
+
+        options = {
+            "num_range": (6, 10),
+            "x": self.x,
+            "y": self.y,
+            "angle_range": (0.3, -0.3),
+            "speed_range": (0.5, 3),
+            "rotation_range": (0.01, 0.1),
+            "growth_range": (0.4, 0.7),
+            "grow_frames": 50,
+            "shrink_frames": 10
+        }
+        create_particles(options)
+
+        options["angle_range"] = (math.pi - 0.3, math.pi + 0.3)
+        create_particles(options)
 
     def check_object_collision(self):
         for platform in world.platforms:
@@ -458,9 +475,9 @@ class Mouse:
         self.down = self.left or self.right
 
 
-class GUI:
+class HUD:
     def __init__(self):
-        self.fuel = FuelGUI()
+        self.fuel = FuelMeter()
 
         self.elements = [self.fuel]
 
@@ -472,16 +489,15 @@ class GUI:
         for element in self.elements:
             element.update()
 
-
 class Particle:
-    def __init__(self, x, y, vx, vy, rotate, grow, shrink_start, shrink_frames):
+    def __init__(self, x, y, vx, vy, rotate, growth, grow_frames, shrink_frames):
         self.x = x
         self.y = y
         self.vx = vx
         self.vy = vy
         self.rotate = rotate
-        self.grow = grow
-        self.shrink_start = shrink_start
+        self.growth = growth
+        self.grow_frames = grow_frames
         self.shrink_frames = shrink_frames
 
         self.rotation = 0
@@ -501,8 +517,8 @@ class Particle:
         self.y += self.vy
         self.rotation += self.rotate
 
-        if self.frame_count < self.shrink_start:
-            self.radius += self.grow
+        if self.frame_count < self.grow_frames:
+            self.radius += self.growth
             self.max_radius = self.radius
         else:
             self.radius -= self.max_radius / self.shrink_frames
@@ -512,7 +528,7 @@ class Particle:
 
         self.frame_count += 1
 
-class FuelGUI:
+class FuelMeter:
     def __init__(self):
         self.x = 30
         self.y = 30
@@ -597,9 +613,33 @@ def hexagon_points(center_x, center_y, radius, rotation = 0):
 
     return points
 
+def create_particles(options):
+    num_range = options["num_range"]
+    x = options["x"]
+    y = options["y"]
+    angle_range = options["angle_range"]
+    speed_range = options["speed_range"]
+    rotation_range = options["rotation_range"]
+    growth_range = options["growth_range"]
+    grow_frames = options["grow_frames"]
+    shrink_frames = options["shrink_frames"]
+
+    def get_random(range_param):
+        return random.uniform(range_param[0], range_param[1])
+
+    num = random.randint(num_range[0], num_range[1])
+    for _ in range(num):
+        angle = get_random(angle_range)
+        speed = get_random(speed_range)
+        vx = speed * math.cos(angle)
+        vy = speed * math.sin(angle)
+        rotation = get_random(rotation_range)
+        growth = get_random(growth_range)
+
+        particles.append(Particle(x, y, vx, vy, rotation, growth, grow_frames, shrink_frames))
 
 # Global Variables
-gui = GUI()
+hud = HUD()
 mouse = Mouse()
 gravity = 3
 clock = pygame.time.Clock()
@@ -611,6 +651,7 @@ world = World()
 player = Player()
 platform = Platform(0)
 world.platforms.append(platform)
+particles = []
 
 # Initial Setup
 platform.x = player.w / 2 - platform.w / 2
@@ -632,11 +673,11 @@ while running:
     dt = clock.tick(60) / 1000
 
     mouse.update()
-    gui.update()
+    hud.update()
     player.update()
     game_window.update()
 
-    gui.draw()
+    hud.draw()
     world.draw()
     player.draw()
 
