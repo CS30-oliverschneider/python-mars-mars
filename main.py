@@ -101,9 +101,11 @@ class Player:
         if mouse.left:
             self.vy -= self.y_thrust
             self.vx += self.x_thrust
+            particle_generator.thrust(1)
         if mouse.right:
             self.vy -= self.y_thrust
             self.vx -= self.x_thrust
+            particle_generator.thrust(-1)
 
         if mouse.down:
             self.fuel -= self.delta_fuel
@@ -113,21 +115,7 @@ class Player:
         self.vy = self.launch_speed_y
         self.state = "launched"
 
-        options = {
-            "num_range": (6, 10),
-            "x": self.x,
-            "y": self.y,
-            "angle_range": (0.3, -0.3),
-            "speed_range": (0.5, 3),
-            "rotation_range": (0.01, 0.1),
-            "growth_range": (0.4, 0.7),
-            "grow_frames": 50,
-            "shrink_frames": 10
-        }
-        create_particles(options)
-
-        options["angle_range"] = (math.pi - 0.3, math.pi + 0.3)
-        create_particles(options)
+        particle_generator.launch()
 
     def check_object_collision(self):
         for platform in world.platforms:
@@ -160,6 +148,7 @@ class Player:
         self.fuel = 6
 
     def die(self):
+        particle_generator.explosion()
         self.reset()
 
         world.platforms.clear()
@@ -489,6 +478,84 @@ class HUD:
         for element in self.elements:
             element.update()
 
+class ParticleGenerator:
+    def launch(self):
+        options = {
+            "num_range": (6, 10),
+            "x": player.x + player.w / 2,
+            "y": player.y + player.h * 0.75,
+            "angle_range": (0.3, -0.3),
+            "speed_range": (50, 30),
+            "rotation_range": (1, 10),
+            "growth_range": (0.4, 0.7),
+            "grow_frames": 50,
+            "shrink_frames": 10
+        }
+        self.create_particles(options)
+
+        options["angle_range"] = (math.pi - 0.3, math.pi + 0.3)
+        self.create_particles(options)
+    
+    def thrust(self, direction):
+        delta_angle = math.pi / 4 * direction
+        options = {
+            "num_range": (1, 1),
+            "x": player.x + player.w / 2,
+            "y": player.y + player.h * 0.5,
+            "angle_range": (0.5 * math.pi + delta_angle - 0.3, 0.5 * math.pi + delta_angle + 0.3),
+            "speed_range": (50, 20),
+            "rotation_range": (1, 10),
+            "growth_range": (0.5, 1),
+            "grow_frames": 20,
+            "shrink_frames": 10
+        }
+        self.create_particles(options, True)
+
+    def explosion(self):
+        options = {
+            "num_range": (6, 10),
+            "x": player.x + player.w / 2,
+            "y": player.y + player.h / 2,
+            "angle_range": (-math.pi / 2 - 0.5, -math.pi / 2 + 0.5),
+            "speed_range": (50, 30),
+            "rotation_range": (1, 10),
+            "growth_range": (3, 5),
+            "grow_frames": 10,
+            "shrink_frames": 100
+        }
+        self.create_particles(options)
+
+    def create_particles(self, options, relative_speed = False):
+        num_range = options["num_range"]
+        x = options["x"]
+        y = options["y"]
+        angle_range = options["angle_range"]
+        speed_range = options["speed_range"]
+        rotation_range = options["rotation_range"]
+        growth_range = options["growth_range"]
+        grow_frames = options["grow_frames"]
+        shrink_frames = options["shrink_frames"]
+
+        random.seed(None)
+
+        def get_random(range_param):
+            return random.uniform(range_param[0], range_param[1])
+
+        num = random.randint(num_range[0], num_range[1])
+        for _ in range(num):
+            angle = get_random(angle_range)
+            speed = get_random(speed_range)
+            vx = speed * math.cos(angle)
+            vy = speed * math.sin(angle)
+            rotation = get_random(rotation_range) * [-1, 1][random.randint(0, 1)]
+            growth = get_random(growth_range)
+
+            if relative_speed:
+                vx += player.vx
+                vy += player.vy
+
+            particles.append(Particle(x, y, vx, vy, rotation, growth, grow_frames, shrink_frames))
+
 class Particle:
     def __init__(self, x, y, vx, vy, rotate, growth, grow_frames, shrink_frames):
         self.x = x
@@ -513,9 +580,9 @@ class Particle:
         pygame.draw.polygon(screen, 'white', points)
 
     def update(self):
-        self.x += self.vx
-        self.y += self.vy
-        self.rotation += self.rotate
+        self.x += self.vx * dt
+        self.y += self.vy * dt
+        self.rotation += self.rotate * dt
 
         if self.frame_count < self.grow_frames:
             self.radius += self.growth
@@ -613,30 +680,13 @@ def hexagon_points(center_x, center_y, radius, rotation = 0):
 
     return points
 
-def create_particles(options):
-    num_range = options["num_range"]
-    x = options["x"]
-    y = options["y"]
-    angle_range = options["angle_range"]
-    speed_range = options["speed_range"]
-    rotation_range = options["rotation_range"]
-    growth_range = options["growth_range"]
-    grow_frames = options["grow_frames"]
-    shrink_frames = options["shrink_frames"]
-
-    def get_random(range_param):
-        return random.uniform(range_param[0], range_param[1])
-
-    num = random.randint(num_range[0], num_range[1])
-    for _ in range(num):
-        angle = get_random(angle_range)
-        speed = get_random(speed_range)
-        vx = speed * math.cos(angle)
-        vy = speed * math.sin(angle)
-        rotation = get_random(rotation_range)
-        growth = get_random(growth_range)
-
-        particles.append(Particle(x, y, vx, vy, rotation, growth, grow_frames, shrink_frames))
+def setup():
+    platform = Platform(0)
+    world.platforms.append(platform)
+    platform.x = player.w / 2 - platform.w / 2
+    platform.y = world.highest_in_range(platform.x, platform.x + platform.w) - platform.h
+    player.platform = platform
+    player.y = platform.y - player.h
 
 # Global Variables
 hud = HUD()
@@ -649,15 +699,9 @@ frame_count = 0
 game_window = GameWindow()
 world = World()
 player = Player()
-platform = Platform(0)
-world.platforms.append(platform)
+particle_generator = ParticleGenerator()
 particles = []
-
-# Initial Setup
-platform.x = player.w / 2 - platform.w / 2
-platform.y = world.highest_in_range(platform.x, platform.x + platform.w) - platform.h
-player.platform = platform
-player.y = platform.y - player.h
+setup()
 
 # Main Loop
 running = True
@@ -679,10 +723,9 @@ while running:
 
     hud.draw()
     world.draw()
-    player.draw()
-
     for particle in particles:
         particle.update()
         particle.draw()
+    player.draw()
 
     pygame.display.flip()
