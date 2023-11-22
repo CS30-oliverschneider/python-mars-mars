@@ -484,12 +484,12 @@ class ParticleGenerator:
             "num_range": (6, 10),
             "x": player.x + player.w / 2,
             "y": player.y + player.h * 0.75,
-            "angle_range": (0.3, -0.3),
-            "speed_range": (50, 30),
+            "angle_range": (0.2, -0.2),
+            "speed_range": (50, 200),
             "rotation_range": (1, 10),
-            "growth_range": (0.4, 0.7),
-            "grow_frames": 50,
-            "shrink_frames": 10
+            "growth_range": (1, 1.5),
+            "grow_frames": 20,
+            "shrink_frames": 30
         }
         self.create_particles(options)
 
@@ -497,17 +497,17 @@ class ParticleGenerator:
         self.create_particles(options)
     
     def thrust(self, direction):
-        delta_angle = math.pi / 4 * direction
+        delta_angle = math.atan2(player.y_thrust, player.x_thrust) * direction
         options = {
             "num_range": (1, 1),
             "x": player.x + player.w / 2,
-            "y": player.y + player.h * 0.5,
+            "y": player.y + player.h * 0.7,
             "angle_range": (0.5 * math.pi + delta_angle - 0.3, 0.5 * math.pi + delta_angle + 0.3),
-            "speed_range": (50, 20),
+            "speed_range": (50, 80),
             "rotation_range": (1, 10),
-            "growth_range": (0.5, 1),
+            "growth_range": (0.4, 0.8),
             "grow_frames": 20,
-            "shrink_frames": 10
+            "shrink_frames": 30
         }
         self.create_particles(options, True)
 
@@ -650,8 +650,8 @@ class FuelMeter:
 
 
 def check_collision(obj1, obj2):
-    check_x = obj1.x + obj1.w > obj2.x and obj1.x < obj2.x + obj2.w
-    check_y = obj1.y + obj1.h > obj2.y and obj1.y < obj2.y + obj2.h
+    check_x = round(obj1.x + obj1.w, 6) > round(obj2.x, 6) and round(obj1.x, 6) < round(obj2.x + obj2.w, 6)
+    check_y = round(obj1.y + obj1.h, 6) > round(obj2.y, 6) and round(obj1.y, 6) < round(obj2.y + obj2.h, 6)
     if check_x and check_y:
         obj2.resolve_collision()
 
