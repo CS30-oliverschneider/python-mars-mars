@@ -150,12 +150,7 @@ class Player:
     def die(self):
         particle_generator.explosion()
         self.reset()
-
-        world.platforms.clear()
-        world.platforms.append(self.platform)
-        world.terrain_points.clear()
-        world.terrain_points.append(self.platform.terrain_point)
-
+        world.clear()
         self.x = center_x(self.platform) - self.w / 2
         self.delta_frame = 0
         self.current_frame = 0
@@ -163,7 +158,9 @@ class Player:
 
 class World:
     def __init__(self):
-        self.terrain_points = []
+        self.terrain_points1 = []
+        self.terrain_points2 = []
+        self.terrain_points3 = []
         self.platforms = []
         self.highest = float("inf")
 
@@ -176,10 +173,11 @@ class World:
         self.terrain_generator.update()
         self.platform_generator.update()
 
-        draw_points = [
-            (point.x - game_window.left, point.y - game_window.top) for point in self.terrain_points
-        ]
-        pygame.draw.lines(screen, "white", False, draw_points)
+        for n in range(1, 4):
+            draw_points = []
+            for point in getattr(self, f"terrain_points{n}"):
+                draw_points.append((point.x - game_window.left, point.y - game_window.top))
+            pygame.draw.lines(screen, "white", False, draw_points)
 
         for platform in self.platforms:
             platform.draw()
@@ -187,10 +185,10 @@ class World:
     def highest_in_range(self, x_start, x_stop):
         y_values = []
 
-        for i in range(len(self.terrain_points)):
-            point = self.terrain_points[i]
+        for i in range(len(self.terrain_points1)):
+            point = self.terrain_points1[i]
 
-            if point.x > x_stop and self.terrain_points[i - 1].x < x_start:
+            if point.x > x_stop and self.terrain_points1[i - 1].x < x_start:
                 y_values.append(self.get_y(x_start, i, i - 1))
                 y_values.append(self.get_y(x_stop, i, i - 1))
                 break
@@ -201,27 +199,35 @@ class World:
 
             if i < 0:
                 print("too small")
-            if i + 1 > len(self.terrain_points) - 1:
+            if i + 1 > len(self.terrain_points1) - 1:
                 print("too big")
 
             if len(y_values) == 0:
                 y_values.append(self.get_y(x_start, i, i - 1))
-            if self.terrain_points[i + 1].x > x_stop:
+            if self.terrain_points1[i + 1].x > x_stop:
                 y_values.append(self.get_y(x_stop, i, i + 1))
 
             y_values.append(point.y)
 
         if len(y_values) == 0:
             print(x_start, x_stop)
-            for point in world.terrain_points:
+            for point in world.terrain_points1:
                 print(point.x)
 
         return min(y_values)
 
     def get_y(self, x, index1, index2):
-        p1 = self.terrain_points[index1]
-        p2 = self.terrain_points[index2]
+        p1 = self.terrain_points1[index1]
+        p2 = self.terrain_points1[index2]
         return (p2.y - p1.y) / (p2.x - p1.x) * (x - p2.x) + p2.y
+    
+    def clear(self):
+        self.platforms.clear()
+        self.platforms.append(self.platform)
+        for n in range(1, 4):
+            terrain_points = getattr(self, f"terrain_points{n}")
+            terrain_points.clear()
+            terrain_points.append(self.platform.terrain_point)
 
 
 class Spring:
@@ -329,7 +335,7 @@ class Platform:
 
         self.seed_offset = seed_offset
 
-        for point in world.terrain_points:
+        for point in world.terrain_points1:
             if point.x > self.x:
                 self.terrain_point = point
                 break
@@ -353,7 +359,7 @@ class Platform:
 class TerrainGenerator:
     def __init__(self, world):
         self.world = world
-        self.terrain_points = world.terrain_points
+        self.terrain_points1 = world.terrain_points1
 
         self.window_offset = 50
 
@@ -366,7 +372,7 @@ class TerrainGenerator:
         self.y_scale = 500
 
         start = TerrainPoint(game_window.left - self.window_offset, 0, -1)
-        self.terrain_points.append(self.new_terrain_point(start, 1))
+        self.terrain_points1.append(self.new_terrain_point(start, 1))
 
     def update(self):
         self.add_terrain_points()
@@ -378,17 +384,17 @@ class TerrainGenerator:
         elif direction == -1:
             index = 0
 
-        terrain_point = self.terrain_points[index]
+        terrain_point = self.terrain_points1[index]
         x = terrain_point.x
 
         while x >= game_window.left - self.window_offset and x <= game_window.right + self.window_offset:
-            terrain_point = self.new_terrain_point(self.terrain_points[index], direction)
+            terrain_point = self.new_terrain_point(self.terrain_points1[index], direction)
             x = terrain_point.x
 
             if direction == 1:
-                self.terrain_points.append(terrain_point)
+                self.terrain_points1.append(terrain_point)
             elif direction == -1:
-                self.terrain_points.insert(0, terrain_point)
+                self.terrain_points1.insert(0, terrain_point)
 
             if terrain_point.y < self.world.highest:
                 self.world.highest = terrain_point.y
@@ -412,16 +418,16 @@ class TerrainGenerator:
         return result * self.y_scale
 
     def add_terrain_points(self):
-        if self.terrain_points[-1].x < game_window.right + self.window_offset:
+        if self.terrain_points1[-1].x < game_window.right + self.window_offset:
             self.generate_terrain_points(1)
-        if self.terrain_points[0].x > game_window.left - self.window_offset:
+        if self.terrain_points1[0].x > game_window.left - self.window_offset:
             self.generate_terrain_points(-1)
 
     def remove_terrain_points(self):
-        if self.terrain_points[1].x < game_window.left - self.window_offset:
-            self.terrain_points.pop(0)
-        if self.terrain_points[-2].x > game_window.right + self.window_offset:
-            self.terrain_points.pop(-1)
+        if self.terrain_points1[1].x < game_window.left - self.window_offset:
+            self.terrain_points1.pop(0)
+        if self.terrain_points1[-2].x > game_window.right + self.window_offset:
+            self.terrain_points1.pop(-1)
 
 
 class TerrainPoint:
@@ -513,11 +519,11 @@ class ParticleGenerator:
 
     def explosion(self):
         options = {
-            "num_range": (6, 10),
+            "num_range": (4, 6),
             "x": player.x + player.w / 2,
             "y": player.y + player.h / 2,
-            "angle_range": (-math.pi / 2 - 0.5, -math.pi / 2 + 0.5),
-            "speed_range": (50, 30),
+            "angle_range": (-math.pi / 2 - 1, -math.pi / 2 + 1),
+            "speed_range": (80, 100),
             "rotation_range": (1, 10),
             "growth_range": (3, 5),
             "grow_frames": 10,
@@ -573,7 +579,7 @@ class Particle:
         self.max_radius = 0
 
     def draw(self):
-        if self.radius < 0:
+        if self.radius <= 0:
             return
         
         points = hexagon_points(self.x - game_window.left, self.y - game_window.top, self.radius, self.rotation)
@@ -590,8 +596,8 @@ class Particle:
         else:
             self.radius -= self.max_radius / self.shrink_frames
 
-        if self.radius < 0:
-            particles.remove(self)
+        if self.radius <= 0:
+            return particles.remove(self)
 
         self.frame_count += 1
 
@@ -650,9 +656,12 @@ class FuelMeter:
 
 
 def check_collision(obj1, obj2):
-    check_x = round(obj1.x + obj1.w, 6) > round(obj2.x, 6) and round(obj1.x, 6) < round(obj2.x + obj2.w, 6)
-    check_y = round(obj1.y + obj1.h, 6) > round(obj2.y, 6) and round(obj1.y, 6) < round(obj2.y + obj2.h, 6)
-    if check_x and check_y:
+    left = round(obj1.x + obj1.w, 6) > round(obj2.x, 6)
+    right = round(obj1.x, 6) < round(obj2.x + obj2.w, 6)
+    top = round(obj1.y + obj1.h, 6) > round(obj2.y, 6)
+    bottom = round(obj1.y, 6) < round(obj2.y + obj2.h, 6)
+    
+    if left and right and top and bottom:
         obj2.resolve_collision()
 
 
@@ -720,11 +729,12 @@ while running:
     hud.update()
     player.update()
     game_window.update()
+    for particle in particles:
+        particle.update()
 
     hud.draw()
     world.draw()
     for particle in particles:
-        particle.update()
         particle.draw()
     player.draw()
 
