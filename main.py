@@ -150,7 +150,7 @@ class Player:
     def die(self):
         particle_generator.explosion()
         self.reset()
-        world.clear()
+        world.clear(self.platform)
         self.x = center_x(self.platform) - self.w / 2
         self.delta_frame = 0
         self.current_frame = 0
@@ -161,23 +161,38 @@ class World:
         self.terrain_points1 = []
         self.terrain_points2 = []
         self.terrain_points3 = []
+        self.terrain_lists = [self.terrain_points1, self.terrain_points2, self.terrain_points3]
         self.platforms = []
         self.highest = float("inf")
 
         self.terrain_generator = TerrainGenerator(self)
         self.platform_generator = PlatformGenerator(self)
 
-        self.terrain_generator.generate_terrain_points(1)
+        for i in range(len(self.terrain_lists)):
+            self.terrain_generator.generate_terrain_points(1, self.terrain_lists[i], i)
 
     def draw(self):
         self.terrain_generator.update()
         self.platform_generator.update()
 
-        for n in range(1, 4):
+        for i in range(len(self.terrain_lists) - 1, -1, -1):
+            terrain_points = self.terrain_lists[i]
+            
             draw_points = []
-            for point in getattr(self, f"terrain_points{n}"):
+            for point in terrain_points:
                 draw_points.append((point.x - game_window.left, point.y - game_window.top))
-            pygame.draw.lines(screen, "white", False, draw_points)
+
+            draw_points.append((display_size[0], display_size[1]))
+            draw_points.append((0, display_size[1]))
+
+            if i == 0:
+                color = "red"
+            elif i == 1:
+                color = "blue"
+            elif i == 2:
+                color = "yellow"
+            
+            pygame.draw.polygon(screen, color, draw_points)
 
         for platform in self.platforms:
             platform.draw()
@@ -196,11 +211,6 @@ class World:
                 continue
             elif point.x > x_stop:
                 break
-
-            if i < 0:
-                print("too small")
-            if i + 1 > len(self.terrain_points1) - 1:
-                print("too big")
 
             if len(y_values) == 0:
                 y_values.append(self.get_y(x_start, i, i - 1))
@@ -221,13 +231,13 @@ class World:
         p2 = self.terrain_points1[index2]
         return (p2.y - p1.y) / (p2.x - p1.x) * (x - p2.x) + p2.y
     
-    def clear(self):
+    def clear(self, platform):
         self.platforms.clear()
-        self.platforms.append(self.platform)
-        for n in range(1, 4):
-            terrain_points = getattr(self, f"terrain_points{n}")
+        self.platforms.append(platform)
+        for i in range(len(self.terrain_lists)):
+            terrain_points = self.terrain_lists[i]
             terrain_points.clear()
-            terrain_points.append(self.platform.terrain_point)
+            terrain_points.append(platform.terrain_points[i])
 
 
 class Spring:
@@ -334,11 +344,13 @@ class Platform:
         self.y = world.highest_in_range(self.x, self.x + self.w) - self.h
 
         self.seed_offset = seed_offset
+        self.terrain_points = []
 
-        for point in world.terrain_points1:
-            if point.x > self.x:
-                self.terrain_point = point
-                break
+        for terrain_points in world.terrain_lists:
+            for point in terrain_points:
+                if point.x > self.x:
+                    self.terrain_points.append(point)
+                    break
 
     def draw(self):
         pygame.draw.rect(
@@ -359,10 +371,7 @@ class Platform:
 class TerrainGenerator:
     def __init__(self, world):
         self.world = world
-        self.terrain_points1 = world.terrain_points1
-
         self.window_offset = 50
-
         self.min_dist_x = 10
         self.max_dist_x = 50
         self.octaves = 4
@@ -371,35 +380,37 @@ class TerrainGenerator:
         self.x_scale = 0.001
         self.y_scale = 500
 
-        start = TerrainPoint(game_window.left - self.window_offset, 0, -1)
-        self.terrain_points1.append(self.new_terrain_point(start, 1))
+        for terrain_points in self.world.terrain_lists:
+            terrain_points.append(TerrainPoint(game_window.left - self.window_offset, 0, -1))
 
     def update(self):
-        self.add_terrain_points()
-        self.remove_terrain_points()
+        for i in range(len(self.world.terrain_lists)):
+            terrain_points = self.world.terrain_lists[i]
+            self.add_terrain_points(terrain_points, i)
+            self.remove_terrain_points(terrain_points)
 
-    def generate_terrain_points(self, direction):
+    def generate_terrain_points(self, direction, terrain_points, terrain_index):
         if direction == 1:
             index = -1
         elif direction == -1:
             index = 0
 
-        terrain_point = self.terrain_points1[index]
+        terrain_point = terrain_points[index]
         x = terrain_point.x
 
         while x >= game_window.left - self.window_offset and x <= game_window.right + self.window_offset:
-            terrain_point = self.new_terrain_point(self.terrain_points1[index], direction)
+            terrain_point = self.new_terrain_point(terrain_points[index], direction, terrain_index)
             x = terrain_point.x
 
             if direction == 1:
-                self.terrain_points1.append(terrain_point)
+                terrain_points.append(terrain_point)
             elif direction == -1:
-                self.terrain_points1.insert(0, terrain_point)
+                terrain_points.insert(0, terrain_point)
 
             if terrain_point.y < self.world.highest:
                 self.world.highest = terrain_point.y
 
-    def new_terrain_point(self, last_terrain_point, direction):
+    def new_terrain_point(self, last_terrain_point, direction, terrain_index):
         seed_offset = last_terrain_point.seed_offset + direction
 
         if direction == 1:
@@ -409,35 +420,35 @@ class TerrainGenerator:
             dist_x = random_float(self.max_dist_x, self.min_dist_x, seed_offset + 1)
             x = last_terrain_point.x - dist_x
 
-        y = self.perlin_noise(x)
+        y = self.perlin_noise(x, terrain_index)
 
         return TerrainPoint(x, y, seed_offset)
 
-    def perlin_noise(self, x):
-        result = noise.pnoise1(x * self.x_scale + seed, self.octaves, self.persistence, self.lacunarity)
-        return result * self.y_scale
+    def perlin_noise(self, x, terrain_index):
+        x_offset = terrain_index * 10000
+        y_offset = terrain_index * 200
 
-    def add_terrain_points(self):
-        if self.terrain_points1[-1].x < game_window.right + self.window_offset:
-            self.generate_terrain_points(1)
-        if self.terrain_points1[0].x > game_window.left - self.window_offset:
-            self.generate_terrain_points(-1)
+        result = noise.pnoise1(x * self.x_scale + seed + x_offset, self.octaves, self.persistence, self.lacunarity)
+        return result * self.y_scale - y_offset
 
-    def remove_terrain_points(self):
-        if self.terrain_points1[1].x < game_window.left - self.window_offset:
-            self.terrain_points1.pop(0)
-        if self.terrain_points1[-2].x > game_window.right + self.window_offset:
-            self.terrain_points1.pop(-1)
+    def add_terrain_points(self, terrain_points, index):
+        if terrain_points[-1].x < game_window.right + self.window_offset:
+            self.generate_terrain_points(1, terrain_points, index)
+        if terrain_points[0].x > game_window.left - self.window_offset:
+            self.generate_terrain_points(-1, terrain_points, index)
+
+    def remove_terrain_points(self, terrain_points):
+        if terrain_points[1].x < game_window.left - self.window_offset:
+            terrain_points.pop(0)
+        if terrain_points[-2].x > game_window.right + self.window_offset:
+            terrain_points.pop(-1)
 
 
 class TerrainPoint:
     def __init__(self, x, y, seed_offset):
         self.x = x
         self.y = y
-
         self.seed_offset = seed_offset
-
-        self.color = "white"
 
 
 class GameWindow:
