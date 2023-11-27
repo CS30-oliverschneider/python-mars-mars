@@ -158,25 +158,24 @@ class Player:
 
 class World:
     def __init__(self):
-        self.terrain_points1 = []
-        self.terrain_points2 = []
-        self.terrain_points3 = []
-        self.terrain_lists = [self.terrain_points1, self.terrain_points2, self.terrain_points3]
+        self.layers = []
         self.platforms = []
         self.highest = float("inf")
+
+        self.create_layers()
 
         self.terrain_generator = TerrainGenerator(self)
         self.platform_generator = PlatformGenerator(self)
 
-        for i in range(len(self.terrain_lists)):
-            self.terrain_generator.generate_terrain_points(1, self.terrain_lists[i], i)
+        for i in range(len(self.layers)):
+            self.terrain_generator.generate_terrain_points(1, self.layers[i].points, i)
 
     def draw(self):
         self.terrain_generator.update()
         self.platform_generator.update()
 
-        for i in range(len(self.terrain_lists) - 1, -1, -1):
-            terrain_points = self.terrain_lists[i]
+        for i in reversed(range(len(self.layers))):
+            terrain_points = self.layers[i].points
             
             draw_points = []
             for point in terrain_points:
@@ -186,24 +185,52 @@ class World:
             draw_points.append((0, display_size[1]))
 
             if i == 0:
-                color = "red"
+                color = "#77160a"
             elif i == 1:
-                color = "blue"
+                color = "#548a68"
             elif i == 2:
-                color = "yellow"
+                color = "#87c289"
             
             pygame.draw.polygon(screen, color, draw_points)
 
         for platform in self.platforms:
             platform.draw()
 
+    def create_layers(self):
+        class Layer:
+            def __init__(self, color, x_offset, y_offset, noise_params):
+                self.color = color
+                self.x_offset = x_offset
+                self.y_offset = y_offset
+                self.noise_params = noise_params
+                self.points = []
+
+        class NoiseParams:
+            def __init__(self, octaves, persistence, lacunarity, x_scale, y_scale):
+                self.octaves = octaves
+                self.persistence = persistence
+                self.lacunarity = lacunarity
+                self.x_scale = x_scale
+                self.y_scale = y_scale
+        
+        noise_params1 = NoiseParams(4, 0.6, 2, 0.001, 500)
+        noise_params2 = NoiseParams(4, 0.6, 2, 0.001, 500)
+        noise_params3 = NoiseParams(4, 0.6, 2, 0.001, 500)
+        
+        layer1 = Layer("#77160a", 0, 0, noise_params1)
+        layer2 = Layer("#548a68", 200, 10000, noise_params2)
+        layer3 = Layer("#87c289", 400, 20000, noise_params3)
+
+        self.main_layer = layer1
+        self.layers = [layer1, layer2, layer3]
+
     def highest_in_range(self, x_start, x_stop):
         y_values = []
 
-        for i in range(len(self.terrain_points1)):
-            point = self.terrain_points1[i]
+        for i in range(len(self.main_layer.points)):
+            point = self.main_layer.points[i]
 
-            if point.x > x_stop and self.terrain_points1[i - 1].x < x_start:
+            if point.x > x_stop and self.main_layer.points[i - 1].x < x_start:
                 y_values.append(self.get_y(x_start, i, i - 1))
                 y_values.append(self.get_y(x_stop, i, i - 1))
                 break
@@ -214,31 +241,25 @@ class World:
 
             if len(y_values) == 0:
                 y_values.append(self.get_y(x_start, i, i - 1))
-            if self.terrain_points1[i + 1].x > x_stop:
+            if self.main_layer.points[i + 1].x > x_stop:
                 y_values.append(self.get_y(x_stop, i, i + 1))
 
             y_values.append(point.y)
 
-        if len(y_values) == 0:
-            print(x_start, x_stop)
-            for point in world.terrain_points1:
-                print(point.x)
-
         return min(y_values)
 
     def get_y(self, x, index1, index2):
-        p1 = self.terrain_points1[index1]
-        p2 = self.terrain_points1[index2]
+        p1 = self.main_layer.points[index1]
+        p2 = self.main_layer.points[index2]
         return (p2.y - p1.y) / (p2.x - p1.x) * (x - p2.x) + p2.y
     
     def clear(self, platform):
         self.platforms.clear()
         self.platforms.append(platform)
-        for i in range(len(self.terrain_lists)):
-            terrain_points = self.terrain_lists[i]
+        for i in range(len(self.layers)):
+            terrain_points = self.layers[i].points
             terrain_points.clear()
             terrain_points.append(platform.terrain_points[i])
-
 
 class Spring:
     def __init__(self, x, y):
@@ -346,8 +367,8 @@ class Platform:
         self.seed_offset = seed_offset
         self.terrain_points = []
 
-        for terrain_points in world.terrain_lists:
-            for point in terrain_points:
+        for layer in world.layers:
+            for point in layer.points:
                 if point.x > self.x:
                     self.terrain_points.append(point)
                     break
@@ -380,12 +401,12 @@ class TerrainGenerator:
         self.x_scale = 0.001
         self.y_scale = 500
 
-        for terrain_points in self.world.terrain_lists:
-            terrain_points.append(TerrainPoint(game_window.left - self.window_offset, 0, -1))
+        for layer in self.world.layers:
+            layer.points.append(TerrainPoint(game_window.left - self.window_offset, 0, -1))
 
     def update(self):
-        for i in range(len(self.world.terrain_lists)):
-            terrain_points = self.world.terrain_lists[i]
+        for i in range(len(self.world.layers)):
+            terrain_points = self.world.layers[i].points
             self.add_terrain_points(terrain_points, i)
             self.remove_terrain_points(terrain_points)
 
@@ -621,14 +642,15 @@ class FuelMeter:
     def draw(self):
         screen.blit(self.img, (self.x, self.y))
 
-    def update(self):
         center = (self.x + 18, self.y + 17)
         big_hex = hexagon_points(center[0], center[1], 38)
         small_hex = hexagon_points(center[0], center[1], 30)
 
         pygame.draw.polygon(screen, "white", big_hex, 1)
         pygame.draw.polygon(screen, "white", small_hex, 1)
+        self.draw_bar(big_hex, small_hex)
 
+    def draw_bar(self, big_hex, small_hex):
         for n in range(6):
             index1 = n
             index2 = (n + 1) % 6
@@ -664,7 +686,6 @@ class FuelMeter:
                 ]
 
             pygame.draw.polygon(screen, "white", points)
-
 
 def check_collision(obj1, obj2):
     left = round(obj1.x + obj1.w, 6) > round(obj2.x, 6)
@@ -733,20 +754,19 @@ while running:
             player.die()
 
     frame_count += 1
-    screen.fill("black")
+    screen.fill((140, 190, 200))
     dt = clock.tick(60) / 1000
 
     mouse.update()
-    hud.update()
     player.update()
     game_window.update()
     for particle in particles:
         particle.update()
 
-    hud.draw()
     world.draw()
     for particle in particles:
         particle.draw()
     player.draw()
+    hud.draw()
 
     pygame.display.flip()
