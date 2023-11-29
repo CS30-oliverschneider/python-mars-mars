@@ -36,15 +36,15 @@ class Player:
         self.vx = 0
         self.vy = 0
 
-        self.x_thrust = 2
-        self.y_thrust = 5
+        self.x_thrust = 150
+        self.y_thrust = 250
 
         self.max_landing_speed = 150
         self.launch_speed_x = 150
         self.launch_speed_y = -300
 
         self.fuel = 6
-        self.delta_fuel = 0.05
+        self.delta_fuel = 3
 
     def draw(self):
         if self.delta_frame != 0 and frame_count % self.anim_speed == 0:
@@ -88,7 +88,7 @@ class Player:
                 self.delta_frame = 1
             return
 
-        self.vy += gravity
+        self.vy += gravity * dt
 
         if self.state == "launched":
             if not mouse.down:
@@ -99,16 +99,16 @@ class Player:
             return
 
         if mouse.left:
-            self.vy -= self.y_thrust
-            self.vx += self.x_thrust
+            self.vy -= self.y_thrust * dt
+            self.vx += self.x_thrust * dt
             particle_generator.thrust(1)
         if mouse.right:
-            self.vy -= self.y_thrust
-            self.vx -= self.x_thrust
+            self.vy -= self.y_thrust * dt
+            self.vx -= self.x_thrust * dt
             particle_generator.thrust(-1)
 
         if mouse.down:
-            self.fuel -= self.delta_fuel
+            self.fuel -= self.delta_fuel * dt
 
     def launch(self):
         self.vx = self.launch_speed_x
@@ -167,59 +167,34 @@ class World:
         self.terrain_generator = TerrainGenerator(self)
         self.platform_generator = PlatformGenerator(self)
 
-        for i in range(len(self.layers)):
-            self.terrain_generator.generate_terrain_points(1, self.layers[i].points, i)
+        for layer in self.layers:
+            self.terrain_generator.generate_terrain_points(1, layer)
 
     def draw(self):
         self.terrain_generator.update()
         self.platform_generator.update()
 
-        for i in reversed(range(len(self.layers))):
-            terrain_points = self.layers[i].points
-            
+        for layer in reversed(self.layers):
             draw_points = []
-            for point in terrain_points:
+            for point in layer.points:
                 draw_points.append((point.x - game_window.left, point.y - game_window.top))
 
             draw_points.append((display_size[0], display_size[1]))
             draw_points.append((0, display_size[1]))
-
-            if i == 0:
-                color = "#77160a"
-            elif i == 1:
-                color = "#548a68"
-            elif i == 2:
-                color = "#87c289"
             
-            pygame.draw.polygon(screen, color, draw_points)
+            pygame.draw.polygon(screen, layer.color, draw_points)
 
         for platform in self.platforms:
             platform.draw()
 
     def create_layers(self):
-        class Layer:
-            def __init__(self, color, x_offset, y_offset, noise_params):
-                self.color = color
-                self.x_offset = x_offset
-                self.y_offset = y_offset
-                self.noise_params = noise_params
-                self.points = []
-
-        class NoiseParams:
-            def __init__(self, octaves, persistence, lacunarity, x_scale, y_scale):
-                self.octaves = octaves
-                self.persistence = persistence
-                self.lacunarity = lacunarity
-                self.x_scale = x_scale
-                self.y_scale = y_scale
+        noise_params1 = NoiseParams(4, 0.6, 2, 0.001, 500, 0, 0)
+        noise_params2 = NoiseParams(4, 0.6, 2, 0.001, 500, 10000, 200)
+        noise_params3 = NoiseParams(4, 0.6, 2, 0.001, 500, 20000, 400)
         
-        noise_params1 = NoiseParams(4, 0.6, 2, 0.001, 500)
-        noise_params2 = NoiseParams(4, 0.6, 2, 0.001, 500)
-        noise_params3 = NoiseParams(4, 0.6, 2, 0.001, 500)
-        
-        layer1 = Layer("#77160a", 0, 0, noise_params1)
-        layer2 = Layer("#548a68", 200, 10000, noise_params2)
-        layer3 = Layer("#87c289", 400, 20000, noise_params3)
+        layer1 = TerrainLayer(0, "#77160a", noise_params1)
+        layer2 = TerrainLayer(1, "#548a68", noise_params2)
+        layer3 = TerrainLayer(2, "#87c289", noise_params3)
 
         self.main_layer = layer1
         self.layers = [layer1, layer2, layer3]
@@ -256,10 +231,105 @@ class World:
     def clear(self, platform):
         self.platforms.clear()
         self.platforms.append(platform)
-        for i in range(len(self.layers)):
-            terrain_points = self.layers[i].points
-            terrain_points.clear()
-            terrain_points.append(platform.terrain_points[i])
+        for layer in self.layers:
+            layer.points.clear()
+            layer.points.append(platform.terrain_points[layer.index])
+
+class TerrainGenerator:
+    def __init__(self, world):
+        self.world = world
+        self.window_offset = 50
+        self.min_dist_x = 10
+        self.max_dist_x = 50
+        self.octaves = 4
+        self.persistence = 0.6
+        self.lacunarity = 2
+        self.x_scale = 0.001
+        self.y_scale = 500
+
+        for layer in self.world.layers:
+            layer.points.append(TerrainPoint(game_window.left - self.window_offset, 0, -1))
+
+    def update(self):
+        for layer in self.world.layers:
+            self.add_terrain_points(layer)
+            self.remove_terrain_points(layer)
+
+    def generate_terrain_points(self, direction, layer):
+        if direction == 1:
+            index = -1
+        elif direction == -1:
+            index = 0
+
+        terrain_point = layer.points[index]
+        x = terrain_point.x
+
+        while x >= game_window.left - self.window_offset and x <= game_window.right + self.window_offset:
+            terrain_point = self.new_terrain_point(layer.points[index], direction, layer.noise_params)
+            x = terrain_point.x
+
+            if direction == 1:
+                layer.points.append(terrain_point)
+            elif direction == -1:
+                layer.points.insert(0, terrain_point)
+
+            if terrain_point.y < self.world.highest:
+                self.world.highest = terrain_point.y
+
+    def new_terrain_point(self, last_terrain_point, direction, noise_params):
+        seed_offset = last_terrain_point.seed_offset + direction
+
+        if direction == 1:
+            dist_x = random_float(self.max_dist_x, self.min_dist_x, seed_offset)
+            x = last_terrain_point.x + dist_x
+        elif direction == -1:
+            dist_x = random_float(self.max_dist_x, self.min_dist_x, seed_offset + 1)
+            x = last_terrain_point.x - dist_x
+
+        y = self.perlin_noise(x, noise_params)
+
+        return TerrainPoint(x, y, seed_offset)
+
+    def perlin_noise(self, x, params):
+        x = x * params.x_scale + params.x_offset + seed
+        y = noise.pnoise1(x, params.octaves, params.persistence, params.lacunarity)
+        return y * params.y_scale - params.y_offset
+
+    def add_terrain_points(self, layer):
+        if layer.points[-1].x < game_window.right + self.window_offset:
+            self.generate_terrain_points(1, layer)
+        if layer.points[0].x > game_window.left - self.window_offset:
+            self.generate_terrain_points(-1, layer)
+
+    def remove_terrain_points(self, layer):
+        if layer.points[1].x < game_window.left - self.window_offset:
+            layer.points.pop(0)
+        if layer.points[-2].x > game_window.right + self.window_offset:
+            layer.points.pop(-1)
+
+
+class TerrainPoint:
+    def __init__(self, x, y, seed_offset):
+        self.x = x
+        self.y = y
+        self.seed_offset = seed_offset
+
+class TerrainLayer:
+    def __init__(self, index, color, noise_params):
+        self.index = index
+        self.color = color
+        self.noise_params = noise_params
+        self.points = []
+
+class NoiseParams:
+    def __init__(self, octaves, persistence, lacunarity, x_scale, y_scale, x_offset, y_offset):
+        self.octaves = octaves
+        self.persistence = persistence
+        self.lacunarity = lacunarity
+        self.x_scale = x_scale
+        self.y_scale = y_scale
+        self.x_offset = x_offset
+        self.y_offset = y_offset
 
 class Spring:
     def __init__(self, x, y):
@@ -389,89 +459,6 @@ class Platform:
         player.reset()
 
 
-class TerrainGenerator:
-    def __init__(self, world):
-        self.world = world
-        self.window_offset = 50
-        self.min_dist_x = 10
-        self.max_dist_x = 50
-        self.octaves = 4
-        self.persistence = 0.6
-        self.lacunarity = 2
-        self.x_scale = 0.001
-        self.y_scale = 500
-
-        for layer in self.world.layers:
-            layer.points.append(TerrainPoint(game_window.left - self.window_offset, 0, -1))
-
-    def update(self):
-        for i in range(len(self.world.layers)):
-            terrain_points = self.world.layers[i].points
-            self.add_terrain_points(terrain_points, i)
-            self.remove_terrain_points(terrain_points)
-
-    def generate_terrain_points(self, direction, terrain_points, terrain_index):
-        if direction == 1:
-            index = -1
-        elif direction == -1:
-            index = 0
-
-        terrain_point = terrain_points[index]
-        x = terrain_point.x
-
-        while x >= game_window.left - self.window_offset and x <= game_window.right + self.window_offset:
-            terrain_point = self.new_terrain_point(terrain_points[index], direction, terrain_index)
-            x = terrain_point.x
-
-            if direction == 1:
-                terrain_points.append(terrain_point)
-            elif direction == -1:
-                terrain_points.insert(0, terrain_point)
-
-            if terrain_point.y < self.world.highest:
-                self.world.highest = terrain_point.y
-
-    def new_terrain_point(self, last_terrain_point, direction, terrain_index):
-        seed_offset = last_terrain_point.seed_offset + direction
-
-        if direction == 1:
-            dist_x = random_float(self.max_dist_x, self.min_dist_x, seed_offset)
-            x = last_terrain_point.x + dist_x
-        elif direction == -1:
-            dist_x = random_float(self.max_dist_x, self.min_dist_x, seed_offset + 1)
-            x = last_terrain_point.x - dist_x
-
-        y = self.perlin_noise(x, terrain_index)
-
-        return TerrainPoint(x, y, seed_offset)
-
-    def perlin_noise(self, x, terrain_index):
-        x_offset = terrain_index * 10000
-        y_offset = terrain_index * 200
-
-        result = noise.pnoise1(x * self.x_scale + seed + x_offset, self.octaves, self.persistence, self.lacunarity)
-        return result * self.y_scale - y_offset
-
-    def add_terrain_points(self, terrain_points, index):
-        if terrain_points[-1].x < game_window.right + self.window_offset:
-            self.generate_terrain_points(1, terrain_points, index)
-        if terrain_points[0].x > game_window.left - self.window_offset:
-            self.generate_terrain_points(-1, terrain_points, index)
-
-    def remove_terrain_points(self, terrain_points):
-        if terrain_points[1].x < game_window.left - self.window_offset:
-            terrain_points.pop(0)
-        if terrain_points[-2].x > game_window.right + self.window_offset:
-            terrain_points.pop(-1)
-
-
-class TerrainPoint:
-    def __init__(self, x, y, seed_offset):
-        self.x = x
-        self.y = y
-        self.seed_offset = seed_offset
-
-
 class GameWindow:
     def __init__(self):
         self.spacing = 200
@@ -525,9 +512,9 @@ class ParticleGenerator:
             "angle_range": (0.2, -0.2),
             "speed_range": (50, 200),
             "rotation_range": (1, 10),
-            "growth_range": (1, 1.5),
-            "grow_frames": 20,
-            "shrink_frames": 30
+            "growth_range": (50, 75),
+            "grow_time": 0.4,
+            "shrink_time": 0.6
         }
         self.create_particles(options)
 
@@ -543,9 +530,9 @@ class ParticleGenerator:
             "angle_range": (0.5 * math.pi + delta_angle - 0.3, 0.5 * math.pi + delta_angle + 0.3),
             "speed_range": (50, 80),
             "rotation_range": (1, 10),
-            "growth_range": (0.4, 0.8),
-            "grow_frames": 20,
-            "shrink_frames": 30
+            "growth_range": (20, 40),
+            "grow_time": 0.4,
+            "shrink_time": 0.6
         }
         self.create_particles(options, True)
 
@@ -557,9 +544,9 @@ class ParticleGenerator:
             "angle_range": (-math.pi / 2 - 1, -math.pi / 2 + 1),
             "speed_range": (80, 100),
             "rotation_range": (1, 10),
-            "growth_range": (3, 5),
-            "grow_frames": 10,
-            "shrink_frames": 100
+            "growth_range": (150, 250),
+            "grow_time": 0.2,
+            "shrink_time": 2
         }
         self.create_particles(options)
 
@@ -571,8 +558,8 @@ class ParticleGenerator:
         speed_range = options["speed_range"]
         rotation_range = options["rotation_range"]
         growth_range = options["growth_range"]
-        grow_frames = options["grow_frames"]
-        shrink_frames = options["shrink_frames"]
+        grow_time = options["grow_time"]
+        shrink_time = options["shrink_time"]
 
         random.seed(None)
 
@@ -592,22 +579,22 @@ class ParticleGenerator:
                 vx += player.vx
                 vy += player.vy
 
-            particles.append(Particle(x, y, vx, vy, rotation, growth, grow_frames, shrink_frames))
+            particles.append(Particle(x, y, vx, vy, rotation, growth, grow_time, shrink_time))
 
 class Particle:
-    def __init__(self, x, y, vx, vy, rotate, growth, grow_frames, shrink_frames):
+    def __init__(self, x, y, vx, vy, rotate, growth, grow_time, shrink_time):
         self.x = x
         self.y = y
         self.vx = vx
         self.vy = vy
         self.rotate = rotate
         self.growth = growth
-        self.grow_frames = grow_frames
-        self.shrink_frames = shrink_frames
+        self.grow_time = grow_time
+        self.shrink_time = shrink_time
 
         self.rotation = 0
         self.radius = 0
-        self.frame_count = 0
+        self.time = 0
         self.max_radius = 0
 
     def draw(self):
@@ -622,16 +609,17 @@ class Particle:
         self.y += self.vy * dt
         self.rotation += self.rotate * dt
 
-        if self.frame_count < self.grow_frames:
-            self.radius += self.growth
+        if self.time < self.grow_time:
+            self.radius += self.growth * dt
             self.max_radius = self.radius
         else:
-            self.radius -= self.max_radius / self.shrink_frames
+            time_left = self.shrink_time - (self.time - self.grow_time)
+            self.radius = self.max_radius * time_left / self.shrink_time
 
         if self.radius <= 0:
             return particles.remove(self)
 
-        self.frame_count += 1
+        self.time += dt
 
 class FuelMeter:
     def __init__(self):
@@ -732,7 +720,7 @@ def setup():
 # Global Variables
 hud = HUD()
 mouse = Mouse()
-gravity = 3
+gravity = 150
 clock = pygame.time.Clock()
 dt = 0
 seed = random.random() * 100000
@@ -743,6 +731,8 @@ player = Player()
 particle_generator = ParticleGenerator()
 particles = []
 setup()
+
+fps = []
 
 # Main Loop
 running = True
@@ -755,7 +745,11 @@ while running:
 
     frame_count += 1
     screen.fill((140, 190, 200))
-    dt = clock.tick(60) / 1000
+    dt = clock.tick(120) / 1000
+    fps.append(clock.get_fps())
+
+    if frame_count % 100 == 0:
+        print(sum(fps) / len(fps))
 
     mouse.update()
     player.update()
