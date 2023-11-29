@@ -167,34 +167,59 @@ class World:
         self.terrain_generator = TerrainGenerator(self)
         self.platform_generator = PlatformGenerator(self)
 
-        for layer in self.layers:
-            self.terrain_generator.generate_terrain_points(1, layer)
+        for i in range(len(self.layers)):
+            self.terrain_generator.generate_terrain_points(1, self.layers[i].points, i)
 
     def draw(self):
         self.terrain_generator.update()
         self.platform_generator.update()
 
-        for layer in reversed(self.layers):
+        for i in reversed(range(len(self.layers))):
+            terrain_points = self.layers[i].points
+            
             draw_points = []
-            for i in range(len(layer.points)):
-                draw_points.append(layer.draw_point(i))
+            for point in terrain_points:
+                draw_points.append((point.x - game_window.left, point.y - game_window.top))
 
             draw_points.append((display_size[0], display_size[1]))
             draw_points.append((0, display_size[1]))
 
-            pygame.draw.polygon(screen, layer.color, draw_points)
+            if i == 0:
+                color = "#77160a"
+            elif i == 1:
+                color = "#548a68"
+            elif i == 2:
+                color = "#87c289"
+            
+            pygame.draw.polygon(screen, color, draw_points)
 
         for platform in self.platforms:
             platform.draw()
 
     def create_layers(self):
-        noise_params1 = NoiseParams(4, 0.6, 2, 0.001, 500, 0, 0)
-        noise_params2 = NoiseParams(4, 0.6, 2, 0.001, 500, 10000, 200)
-        noise_params3 = NoiseParams(4, 0.6, 2, 0.001, 500, 20000, 400)
+        class Layer:
+            def __init__(self, color, x_offset, y_offset, noise_params):
+                self.color = color
+                self.x_offset = x_offset
+                self.y_offset = y_offset
+                self.noise_params = noise_params
+                self.points = []
+
+        class NoiseParams:
+            def __init__(self, octaves, persistence, lacunarity, x_scale, y_scale):
+                self.octaves = octaves
+                self.persistence = persistence
+                self.lacunarity = lacunarity
+                self.x_scale = x_scale
+                self.y_scale = y_scale
         
-        layer1 = TerrainLayer(0, "#77160a", 1, noise_params1)
-        layer2 = TerrainLayer(1, "#548a68", 0.5, noise_params2)
-        layer3 = TerrainLayer(2, "#87c289", 0.25, noise_params3)
+        noise_params1 = NoiseParams(4, 0.6, 2, 0.001, 500)
+        noise_params2 = NoiseParams(4, 0.6, 2, 0.001, 500)
+        noise_params3 = NoiseParams(4, 0.6, 2, 0.001, 500)
+        
+        layer1 = Layer("#77160a", 0, 0, noise_params1)
+        layer2 = Layer("#548a68", 200, 10000, noise_params2)
+        layer3 = Layer("#87c289", 400, 20000, noise_params3)
 
         self.main_layer = layer1
         self.layers = [layer1, layer2, layer3]
@@ -231,112 +256,10 @@ class World:
     def clear(self, platform):
         self.platforms.clear()
         self.platforms.append(platform)
-        for layer in self.layers:
-            layer.points.clear()
-            layer.points.append(platform.terrain_points[layer.index])
-
-class TerrainGenerator:
-    def __init__(self, world):
-        self.world = world
-        self.window_offset = 50
-        self.min_dist_x = 10
-        self.max_dist_x = 50
-        self.octaves = 4
-        self.persistence = 0.6
-        self.lacunarity = 2
-        self.x_scale = 0.001
-        self.y_scale = 500
-
-        for layer in self.world.layers:
-            layer.points.append(TerrainPoint(game_window.left - self.window_offset, 0, -1))
-
-    def update(self):
-        for layer in self.world.layers:
-            self.add_terrain_points(layer)
-            self.remove_terrain_points(layer)
-
-    def generate_terrain_points(self, direction, layer):
-        if direction == 1:
-            index = -1
-        elif direction == -1:
-            index = 0
-
-        terrain_point = layer.points[index]
-        x = terrain_point.x
-
-        while x >= game_window.left - self.window_offset and x <= game_window.right + self.window_offset:
-            terrain_point = self.new_terrain_point(layer.points[index], direction, layer.noise_params)
-            x = terrain_point.x
-
-            if direction == 1:
-                layer.points.append(terrain_point)
-            elif direction == -1:
-                layer.points.insert(0, terrain_point)
-
-            if terrain_point.y < self.world.highest:
-                self.world.highest = terrain_point.y
-
-    def new_terrain_point(self, last_terrain_point, direction, noise_params):
-        seed_offset = last_terrain_point.seed_offset + direction
-
-        if direction == 1:
-            dist_x = random_float(self.max_dist_x, self.min_dist_x, seed_offset)
-            x = last_terrain_point.x + dist_x
-        elif direction == -1:
-            dist_x = random_float(self.max_dist_x, self.min_dist_x, seed_offset + 1)
-            x = last_terrain_point.x - dist_x
-
-        y = self.perlin_noise(x, noise_params)
-
-        return TerrainPoint(x, y, seed_offset)
-
-    def perlin_noise(self, x, params):
-        x = x * params.x_scale + params.x_offset + seed
-        y = noise.pnoise1(x, params.octaves, params.persistence, params.lacunarity)
-        return y * params.y_scale - params.y_offset
-
-    def add_terrain_points(self, layer):
-        if layer.points[-1].x < game_window.right + self.window_offset:
-            self.generate_terrain_points(1, layer)
-        if layer.points[0].x > game_window.left - self.window_offset:
-            self.generate_terrain_points(-1, layer)
-
-    def remove_terrain_points(self, layer):
-        if layer.points[1].x < game_window.left - self.window_offset:
-            layer.points.pop(0)
-        if layer.points[-2].x > game_window.right + self.window_offset:
-            layer.points.pop(-1)
-
-
-class TerrainPoint:
-    def __init__(self, x, y, seed_offset):
-        self.x = x
-        self.y = y
-        self.seed_offset = seed_offset
-
-class TerrainLayer:
-    def __init__(self, index, color, draw_scale, noise_params):
-        self.index = index
-        self.color = color
-        self.draw_scale = draw_scale
-        self.noise_params = noise_params
-        self.points = []
-
-    def draw_point(self, i):
-        point = self.points[i]
-        x = point.x * self.draw_scale - game_window.left
-        y = point.y * self.draw_scale - game_window.top
-        return (x, y)
-
-class NoiseParams:
-    def __init__(self, octaves, persistence, lacunarity, x_scale, y_scale, x_offset, y_offset):
-        self.octaves = octaves
-        self.persistence = persistence
-        self.lacunarity = lacunarity
-        self.x_scale = x_scale
-        self.y_scale = y_scale
-        self.x_offset = x_offset
-        self.y_offset = y_offset
+        for i in range(len(self.layers)):
+            terrain_points = self.layers[i].points
+            terrain_points.clear()
+            terrain_points.append(platform.terrain_points[i])
 
 class Spring:
     def __init__(self, x, y):
@@ -464,6 +387,90 @@ class Platform:
         player.platform = self
         player.delta_frame = -1
         player.reset()
+
+
+class TerrainGenerator:
+    def __init__(self, world):
+        self.world = world
+        self.window_offset = 50
+        self.min_dist_x = 10
+        self.max_dist_x = 50
+        self.octaves = 4
+        self.persistence = 0.6
+        self.lacunarity = 2
+        self.x_scale = 0.001
+        self.y_scale = 500
+
+        for layer in self.world.layers:
+            layer.points.append(TerrainPoint(game_window.left - self.window_offset, 0, -1))
+
+    def update(self):
+        for i in range(len(self.world.layers)):
+            terrain_points = self.world.layers[i].points
+            self.add_terrain_points(terrain_points, i)
+            self.remove_terrain_points(terrain_points)
+
+    def generate_terrain_points(self, direction, terrain_points, terrain_index):
+        if direction == 1:
+            index = -1
+        elif direction == -1:
+            index = 0
+
+        terrain_point = terrain_points[index]
+        x = terrain_point.x
+
+        while x >= game_window.left - self.window_offset and x <= game_window.right + self.window_offset:
+            terrain_point = self.new_terrain_point(terrain_points[index], direction, terrain_index)
+            x = terrain_point.x
+
+            if direction == 1:
+                terrain_points.append(terrain_point)
+            elif direction == -1:
+                terrain_points.insert(0, terrain_point)
+
+            if terrain_point.y < self.world.highest:
+                self.world.highest = terrain_point.y
+
+    def new_terrain_point(self, last_terrain_point, direction, terrain_index):
+        seed_offset = last_terrain_point.seed_offset + direction
+
+        if direction == 1:
+            dist_x = random_float(self.max_dist_x, self.min_dist_x, seed_offset)
+            x = last_terrain_point.x + dist_x
+        elif direction == -1:
+            dist_x = random_float(self.max_dist_x, self.min_dist_x, seed_offset + 1)
+            x = last_terrain_point.x - dist_x
+
+        y = self.perlin_noise(x, terrain_index)
+
+        return TerrainPoint(x, y, seed_offset)
+
+    def perlin_noise(self, x, terrain_index):
+        x_offset = terrain_index * 10000
+        y_offset = terrain_index * 200
+
+        result = noise.pnoise1(x * self.x_scale + seed + x_offset, self.octaves, self.persistence, self.lacunarity)
+        return result * self.y_scale - y_offset
+
+    def add_terrain_points(self, terrain_points, index):
+        if terrain_points[-1].x < game_window.right + self.window_offset:
+            self.generate_terrain_points(1, terrain_points, index)
+        if terrain_points[0].x > game_window.left - self.window_offset:
+            self.generate_terrain_points(-1, terrain_points, index)
+
+    def remove_terrain_points(self, terrain_points):
+        if terrain_points[1].x < game_window.left - self.window_offset:
+            terrain_points.pop(0)
+        if terrain_points[-2].x > game_window.right + self.window_offset:
+            terrain_points.pop(-1)
+
+
+class TerrainPoint:
+    def __init__(self, x, y, seed_offset):
+        self.x = x
+        self.y = y
+        self.seed_offset = seed_offset
+
 
 class GameWindow:
     def __init__(self):
