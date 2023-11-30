@@ -177,7 +177,9 @@ class World:
         for layer in reversed(self.layers):
             draw_points = []
             for point in layer.points:
-                draw_points.append((point.x - game_window.left, point.y - game_window.top))
+                x = point.x - game_window.left * layer.draw_scale
+                y = point.y - game_window.top * layer.draw_scale
+                draw_points.append((x, y))
 
             draw_points.append((display_size[0], display_size[1]))
             draw_points.append((0, display_size[1]))
@@ -192,9 +194,9 @@ class World:
         noise_params2 = NoiseParams(4, 0.6, 2, 0.001, 500, 10000, 200)
         noise_params3 = NoiseParams(4, 0.6, 2, 0.001, 500, 20000, 400)
         
-        layer1 = TerrainLayer(0, "#77160a", noise_params1)
-        layer2 = TerrainLayer(1, "#548a68", noise_params2)
-        layer3 = TerrainLayer(2, "#87c289", noise_params3)
+        layer1 = TerrainLayer(0, 1, "#77160a", noise_params1)
+        layer2 = TerrainLayer(1, 1, "#548a68", noise_params2)
+        layer3 = TerrainLayer(2, 1, "#87c289", noise_params3)
 
         self.main_layer = layer1
         self.layers = [layer1, layer2, layer3]
@@ -248,7 +250,7 @@ class TerrainGenerator:
         self.y_scale = 500
 
         for layer in self.world.layers:
-            layer.points.append(TerrainPoint(game_window.left - self.window_offset, 0, -1))
+            layer.points.append(TerrainPoint(game_window.left * layer.draw_scale - self.window_offset, 0, -1))
 
     def update(self):
         for layer in self.world.layers:
@@ -264,7 +266,10 @@ class TerrainGenerator:
         terrain_point = layer.points[index]
         x = terrain_point.x
 
-        while x >= game_window.left - self.window_offset and x <= game_window.right + self.window_offset:
+        while (
+            x >= game_window.left * layer.scale - self.window_offset and 
+            x <= game_window.right * layer.scale + self.window_offset
+        ):
             terrain_point = self.new_terrain_point(layer.points[index], direction, layer.noise_params)
             x = terrain_point.x
 
@@ -296,15 +301,15 @@ class TerrainGenerator:
         return y * params.y_scale - params.y_offset
 
     def add_terrain_points(self, layer):
-        if layer.points[-1].x < game_window.right + self.window_offset:
+        if layer.points[-1].x < game_window.right * layer.scale + self.window_offset:
             self.generate_terrain_points(1, layer)
-        if layer.points[0].x > game_window.left - self.window_offset:
+        if layer.points[0].x > game_window.left * layer.scale - self.window_offset:
             self.generate_terrain_points(-1, layer)
 
     def remove_terrain_points(self, layer):
-        if layer.points[1].x < game_window.left - self.window_offset:
+        if layer.points[1].x < game_window.left * layer.scale - self.window_offset:
             layer.points.pop(0)
-        if layer.points[-2].x > game_window.right + self.window_offset:
+        if layer.points[-2].x > game_window.right * layer.scale + self.window_offset:
             layer.points.pop(-1)
 
 
@@ -315,8 +320,9 @@ class TerrainPoint:
         self.seed_offset = seed_offset
 
 class TerrainLayer:
-    def __init__(self, index, color, noise_params):
+    def __init__(self, index, draw_scale, color, noise_params):
         self.index = index
+        self.draw_scale = draw_scale
         self.color = color
         self.noise_params = noise_params
         self.points = []
@@ -613,8 +619,7 @@ class Particle:
             self.radius += self.growth * dt
             self.max_radius = self.radius
         else:
-            time_left = self.shrink_time - (self.time - self.grow_time)
-            self.radius = self.max_radius * time_left / self.shrink_time
+            self.radius -= self.max_radius / self.shrink_time * dt
 
         if self.radius <= 0:
             return particles.remove(self)
@@ -732,8 +737,6 @@ particle_generator = ParticleGenerator()
 particles = []
 setup()
 
-fps = []
-
 # Main Loop
 running = True
 while running:
@@ -745,11 +748,7 @@ while running:
 
     frame_count += 1
     screen.fill((140, 190, 200))
-    dt = clock.tick(120) / 1000
-    fps.append(clock.get_fps())
-
-    if frame_count % 100 == 0:
-        print(sum(fps) / len(fps))
+    dt = clock.tick(60) / 1000
 
     mouse.update()
     player.update()
