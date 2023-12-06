@@ -1,6 +1,5 @@
 import random
 import math
-from typing import Any
 import pygame
 import noise
 
@@ -119,7 +118,7 @@ class Player:
         particle_generator.launch()
 
     def check_object_collision(self):
-        for platform in world.platforms:
+        for platform in world.objects["platform"]:
             check_collision(self, platform)
 
     def check_terrain_collision(self):
@@ -151,10 +150,11 @@ class Player:
     def die(self):
         particle_generator.explosion()
         self.reset()
-        world.clear()
         self.x = center_x(self.platform) - self.w / 2
         self.delta_frame = 0
         self.current_frame = 0
+        game_window.update()
+        world.clear()
 
 
 class World:
@@ -162,10 +162,9 @@ class World:
         self.layers = []
         self.highest = float("inf")
         self.create_layers()
+        self.terrain_generator = TerrainGenerator(self)
 
-        self.platforms = []
-        self.springs = []
-        self.object_lists = [self.platforms, self.springs]
+        self.objects = { "platform": [], "spring": [] }
 
     def draw(self):
         for layer in reversed(self.layers):
@@ -176,19 +175,19 @@ class World:
             
             pygame.draw.polygon(screen, layer.color, draw_points)
 
-        for object_list in self.object_lists:
+        for object_list in self.objects.values():
             for game_object in object_list:
                 game_object.draw()
 
     def update(self):
-        for generator in self.generators:
+        self.terrain_generator.update()
+        for generator in self.object_generators.values():
             generator.update()
 
     def create_generators(self):
-        self.terrain_generator = TerrainGenerator(self)
-        self.platform_generator = ObjectGenerator(Platform, self.platforms, 500, 800)
-        self.spring_generator = ObjectGenerator(Spring, self.springs, 200, 400)
-        self.generators = [self.terrain_generator, self.platform_generator, self.spring_generator]
+        self.platform_generator = ObjectGenerator(Platform, self.objects["platform"], 500, 800)
+        self.spring_generator = ObjectGenerator(Spring, self.objects["spring"], 200, 400)
+        self.object_generators = { "platform": self.platform_generator, "spring": self.spring_generator }
 
     def create_layers(self):
         noise_params1 = NoiseParams(4, 0.6, 2, 0.001, 500, 0, 0)
@@ -232,20 +231,33 @@ class World:
         return (p2.y - p1.y) / (p2.x - p1.x) * (x - p2.x) + p2.y
     
     def clear(self):
-        self.platforms.clear()
-        self.platforms.append(player.platform)
-        self.platform_generator.update_dist()
         for layer in self.layers:
             layer.points.clear()
-            layer.points.append(player.platform.terrain_points[layer.index])
+            layer.points.append(self.terrain_generator.respawn[layer.index])
+            self.terrain_generator.generate_terrain_points(1, layer)
+            
+        for key in self.objects:
+            generator = self.object_generators[key]
+            respawn = generator.respawn
+            
+            self.objects[key].clear()
+            self.objects[key].append(generator.object_class(respawn["x"], respawn["seed_offset"]))
+            generator.update_dist()
 
     def set_repawn_objects(self):
-        self.platform_generator.respawn = self.platforms[0]
-        self.spring_generator.respawn = self.springs[0]
+        self.terrain_generator.respawn.clear()
+        for layer in self.layers:
+            self.terrain_generator.respawn.append(layer.points[0])
+
+        for key in self.objects:
+            first_object = self.objects[key][0]
+            respawn = { "x": first_object.x, "seed_offset": first_object.seed_offset}
+            self.object_generators[key].respawn = respawn
 
 class TerrainGenerator:
     def __init__(self, world):
         self.world = world
+        
         self.window_offset = 50
         self.min_dist_x = 10
         self.max_dist_x = 50
@@ -255,8 +267,14 @@ class TerrainGenerator:
         self.x_scale = 0.001
         self.y_scale = 500
 
+        self.respawn = []
+
         for layer in self.world.layers:
-            layer.points.append(TerrainPoint(game_window.left * layer.draw_scale - self.window_offset, 0, -1))
+            x = game_window.left * layer.draw_scale - self.window_offset
+            point = TerrainPoint(x, layer.index / 10, -1)
+
+            layer.points.append(point)
+            self.respawn.append(point)
             self.generate_terrain_points(1, layer)
 
     def update(self):
@@ -354,8 +372,8 @@ class ObjectGenerator:
         self.min_dist = min_dist
         self.max_dist = max_dist
 
-        self.right = {"x": 0, "offset": 0}
-        self.left = {"x": 0, "offset": 0}
+        self.right = {"x": 0, "seed_offset": 0}
+        self.left = {"x": 0, "seed_offset": 0}
         self.object_w = self.object_class(0, 0).w
         self.dist_right = random_float(self.max_dist, self.min_dist, 0.5)
         self.dist_left = random_float(self.max_dist, self.min_dist, -0.5)
@@ -368,13 +386,13 @@ class ObjectGenerator:
 
     def add_objects(self):
         if self.right["x"] + self.dist_right < game_window.right:
-            new_seed_offset = self.right["offset"] + 1
+            new_seed_offset = self.right["seed_offset"] + 1
             new_x = self.right["x"] + self.dist_right
             self.objects.append(self.object_class(new_x, new_seed_offset))
             self.update_dist()
 
         if self.left["x"] + self.object_w - self.dist_left > game_window.left:
-            new_seed_offset = self.left["offset"] - 1
+            new_seed_offset = self.left["seed_offset"] - 1
             new_x = self.left["x"] - self.dist_left
             self.objects.insert(0, self.object_class(new_x, new_seed_offset))
             self.update_dist()
@@ -387,10 +405,12 @@ class ObjectGenerator:
             self.objects.pop(0)
 
     def update_dist(self):
-        self.right = { "x": self.objects[-1].x, "offset": self.objects[-1].seed_offset }
-        self.left = { "x": self.objects[0].x, "offset": self.objects[0].seed_offset }
-        self.dist_right = random_float(self.max_dist, self.min_dist, self.objects[-1].seed_offset + 0.5)
-        self.dist_left = random_float(self.max_dist, self.min_dist, self.objects[0].seed_offset - 0.5)
+        # if len(self.objects) > 0:
+        self.right = { "x": self.objects[-1].x, "seed_offset": self.objects[-1].seed_offset }
+        self.left = { "x": self.objects[0].x, "seed_offset": self.objects[0].seed_offset }
+            
+        self.dist_right = random_float(self.max_dist, self.min_dist, self.right["seed_offset"] + 0.5)
+        self.dist_left = random_float(self.max_dist, self.min_dist, self.left["seed_offset"] - 0.5)
 
 class Spring:
     def __init__(self, x, seed_offset):
@@ -463,13 +483,6 @@ class Platform:
         self.y = world.highest_in_range(self.x, self.x + self.w) - self.h
 
         self.seed_offset = seed_offset
-        self.terrain_points = []
-
-        for layer in world.layers:
-            for point in layer.points:
-                if point.x > self.x:
-                    self.terrain_points.append(point)
-                    break
 
     def draw(self):
         pygame.draw.rect(
@@ -739,7 +752,7 @@ def hexagon_points(center_x, center_y, radius, rotation = 0):
 
 def setup():
     platform = Platform(0, 0)
-    world.platforms.append(platform)
+    world.objects["platform"].append(platform)
     platform.x = player.w / 2 - platform.w / 2
     platform.y = world.highest_in_range(platform.x, platform.x + platform.w) - platform.h
     player.platform = platform
