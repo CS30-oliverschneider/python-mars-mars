@@ -139,6 +139,7 @@ class Player:
 
             if direction * center_x(self) > direction * center_x(self.platform):
                 self.x = center_x(self.platform) - self.w / 2
+                world.set_respawn_objects()
 
     def reset(self):
         self.y = self.platform.y - self.h
@@ -164,7 +165,7 @@ class World:
         self.create_layers()
         self.terrain_generator = TerrainGenerator(self)
 
-        self.objects = { "platform": [], "spring": [] }
+        self.objects = {"platform": [], "spring": []}
 
     def draw(self):
         for layer in reversed(self.layers):
@@ -172,7 +173,7 @@ class World:
 
             draw_points.append((display_size[0], display_size[1]))
             draw_points.append((0, display_size[1]))
-            
+
             pygame.draw.polygon(screen, layer.color, draw_points)
 
         for object_list in self.objects.values():
@@ -183,17 +184,19 @@ class World:
         self.terrain_generator.update()
         for generator in self.object_generators.values():
             generator.update()
+        for spring in self.objects["spring"]:
+            spring.update()
 
     def create_generators(self):
         self.platform_generator = ObjectGenerator(Platform, self.objects["platform"], 500, 800)
         self.spring_generator = ObjectGenerator(Spring, self.objects["spring"], 200, 400)
-        self.object_generators = { "platform": self.platform_generator, "spring": self.spring_generator }
+        self.object_generators = {"platform": self.platform_generator, "spring": self.spring_generator}
 
     def create_layers(self):
         noise_params1 = NoiseParams(4, 0.6, 2, 0.001, 500, 0, 0)
         noise_params2 = NoiseParams(4, 0.6, 2, 0.001, 500, 10000, 0)
         noise_params3 = NoiseParams(4, 0.6, 2, 0.001, 500, 20000, 0)
-        
+
         layer1 = TerrainLayer(0, 1, "#77160a", noise_params1)
         layer2 = TerrainLayer(1, 0.5, "#548a68", noise_params2)
         layer3 = TerrainLayer(2, 0.25, "#87c289", noise_params3)
@@ -229,35 +232,35 @@ class World:
         p1 = self.main_layer.points[index1]
         p2 = self.main_layer.points[index2]
         return (p2.y - p1.y) / (p2.x - p1.x) * (x - p2.x) + p2.y
-    
+
     def clear(self):
         for layer in self.layers:
             layer.points.clear()
-            layer.points.append(self.terrain_generator.respawn[layer.index])
-            self.terrain_generator.generate_terrain_points(1, layer)
-            
+            layer.points.append(layer.respawn)
+            self.terrain_generator.generate_terrain(1, layer)
+
         for key in self.objects:
             generator = self.object_generators[key]
             respawn = generator.respawn
-            
+
             self.objects[key].clear()
             self.objects[key].append(generator.object_class(respawn["x"], respawn["seed_offset"]))
             generator.update_dist()
 
-    def set_repawn_objects(self):
-        self.terrain_generator.respawn.clear()
+    def set_respawn_objects(self):
         for layer in self.layers:
-            self.terrain_generator.respawn.append(layer.points[0])
+            layer.respawn = layer.points[0]
 
         for key in self.objects:
             first_object = self.objects[key][0]
-            respawn = { "x": first_object.x, "seed_offset": first_object.seed_offset}
+            respawn = {"x": first_object.x, "seed_offset": first_object.seed_offset}
             self.object_generators[key].respawn = respawn
+
 
 class TerrainGenerator:
     def __init__(self, world):
         self.world = world
-        
+
         self.window_offset = 50
         self.min_dist_x = 10
         self.max_dist_x = 50
@@ -267,30 +270,28 @@ class TerrainGenerator:
         self.x_scale = 0.001
         self.y_scale = 500
 
-        self.respawn = []
-
         for layer in self.world.layers:
             x = game_window.left * layer.draw_scale - self.window_offset
             point = TerrainPoint(x, layer.index / 10, -1)
 
             layer.points.append(point)
-            self.respawn.append(point)
-            self.generate_terrain_points(1, layer)
+            layer.respawn = point
+            self.generate_terrain(1, layer)
 
     def update(self):
         for layer in self.world.layers:
             self.add_terrain_points(layer)
             self.remove_terrain_points(layer)
 
-    def generate_terrain_points(self, direction, layer):
+    def generate_terrain(self, direction, layer):
         if direction == 1:
             prev_index = -1
         elif direction == -1:
             prev_index = 0
 
         while (
-            layer.draw_point(prev_index)[0] >= -self.window_offset and 
-            layer.draw_point(prev_index)[0] <= display_size[0] + self.window_offset
+            layer.draw_point(prev_index)[0] >= -self.window_offset - self.max_dist_x
+            and layer.draw_point(prev_index)[0] <= display_size[0] + self.window_offset + self.max_dist_x
         ):
             terrain_point = self.new_terrain_point(layer.points[prev_index], direction, layer.noise_params)
 
@@ -301,6 +302,12 @@ class TerrainGenerator:
 
             if terrain_point.y < self.world.highest:
                 self.world.highest = terrain_point.y
+
+            if (
+                layer.draw_point(prev_index)[0] > display_size[0] + self.window_offset
+                or layer.draw_point(prev_index)[0] < -self.window_offset
+            ):
+                return
 
     def new_terrain_point(self, prev_terrain_point, direction, noise_params):
         seed_offset = prev_terrain_point.seed_offset + direction
@@ -323,9 +330,9 @@ class TerrainGenerator:
 
     def add_terrain_points(self, layer):
         if layer.draw_point(-1)[0] < display_size[0] + self.window_offset:
-            self.generate_terrain_points(1, layer)
+            self.generate_terrain(1, layer)
         if layer.draw_point(0)[0] > -self.window_offset:
-            self.generate_terrain_points(-1, layer)
+            self.generate_terrain(-1, layer)
 
     def remove_terrain_points(self, layer):
         if layer.draw_point(1)[0] < -self.window_offset:
@@ -339,6 +346,7 @@ class TerrainPoint:
         self.x = x
         self.y = y
         self.seed_offset = seed_offset
+
 
 class TerrainLayer:
     def __init__(self, index, draw_scale, color, noise_params):
@@ -354,6 +362,7 @@ class TerrainLayer:
         y = point.y - game_window.top * self.draw_scale
         return (x, y)
 
+
 class NoiseParams:
     def __init__(self, octaves, persistence, lacunarity, x_scale, y_scale, x_offset, y_offset):
         self.octaves = octaves
@@ -363,6 +372,7 @@ class NoiseParams:
         self.y_scale = y_scale
         self.x_offset = x_offset
         self.y_offset = y_offset
+
 
 class ObjectGenerator:
     def __init__(self, object_class, objects, min_dist, max_dist):
@@ -405,38 +415,47 @@ class ObjectGenerator:
             self.objects.pop(0)
 
     def update_dist(self):
-        # if len(self.objects) > 0:
-        self.right = { "x": self.objects[-1].x, "seed_offset": self.objects[-1].seed_offset }
-        self.left = { "x": self.objects[0].x, "seed_offset": self.objects[0].seed_offset }
-            
+        self.right = {"x": self.objects[-1].x, "seed_offset": self.objects[-1].seed_offset}
+        self.left = {"x": self.objects[0].x, "seed_offset": self.objects[0].seed_offset}
+
         self.dist_right = random_float(self.max_dist, self.min_dist, self.right["seed_offset"] + 0.5)
         self.dist_left = random_float(self.max_dist, self.min_dist, self.left["seed_offset"] - 0.5)
+
 
 class Spring:
     def __init__(self, x, seed_offset):
         self.stop_length = 200
+        self.line_width = 5
+        self.r = 20
+
         self.x = x
-        self.w = 20
-        self.y = world.highest_in_range(self.x, self.x + self.w)
+        self.w = self.r * 2
         self.seed_offset = seed_offset
         self.acceleration_up = 10
         self.damping = 3
 
+        range = (self.x + self.r - self.line_width / 2, self.x + self.r + self.line_width / 2)
+        self.y = world.highest_in_range(range[0], range[1]) - self.stop_length - self.r
+
+        self.anchor_x = self.x + self.r
+        self.anchor_y = self.y + self.r + self.stop_length
+
         self.bob_mass = 50
-        self.bob_x = x
-        self.bob_y = self.y - self.stop_length
+        self.bob_x = self.anchor_x
+        self.bob_y = self.anchor_y - self.stop_length
         self.bob_vx = 0
         self.bob_vy = 0
 
         self.rest_length = self.stop_length - self.acceleration_up * self.bob_mass
 
     def draw(self):
-        x = self.x - game_window.left
-        y = self.y - game_window.top
+        anchor_x = self.anchor_x - game_window.left
+        anchor_y = self.anchor_y - game_window.top
         bob_x = self.bob_x - game_window.left
         bob_y = self.bob_y - game_window.top
 
-        pygame.draw.line(screen, "blue", (x, y), (bob_x, bob_y), 5)
+        pygame.draw.line(screen, "blue", (anchor_x, anchor_y), (bob_x, bob_y), self.line_width)
+        pygame.draw.circle(screen, "blue", (bob_x, bob_y), 20)
         pygame.draw.circle(screen, "blue", (bob_x, bob_y), 20)
 
     def update(self):
@@ -444,10 +463,10 @@ class Spring:
         self.move()
 
     def update_velocity(self):
-        length = math.sqrt((self.bob_x - self.x) ** 2 + (self.bob_y - self.y) ** 2)
+        length = math.sqrt((self.bob_x - self.anchor_x) ** 2 + (self.bob_y - self.anchor_y) ** 2)
         stretch = length - self.rest_length
-        sine = (self.bob_x - self.x) / length
-        cosine = (self.bob_y - self.y) / length
+        sine = (self.bob_x - self.anchor_x) / length
+        cosine = (self.bob_y - self.anchor_y) / length
 
         ax = -1 / self.bob_mass * stretch * sine - self.damping / self.bob_mass * self.bob_vx
         ay = (
@@ -464,16 +483,17 @@ class Spring:
         self.bob_y += self.bob_vy
 
         if abs(self.bob_vx) < 0.01 and abs(self.bob_vy) < 0.01:
-            self.bob_x = self.x
-            self.bob_y = self.y - self.stop_length
+            self.bob_x = self.anchor_x
+            self.bob_y = self.anchor_y - self.stop_length
 
-        if mouse.left:
+        if pygame.mouse.get_pressed()[1]:
             mouse_coords = pygame.mouse.get_pos()
-            self.bob_x = mouse_coords[0]
-            self.bob_y = mouse_coords[1]
+            self.bob_x = mouse_coords[0] + game_window.left
+            self.bob_y = mouse_coords[1] + game_window.top
 
             self.bob_vx = 0
             self.bob_vy = 0
+
 
 class Platform:
     def __init__(self, x, seed_offset):
@@ -494,8 +514,7 @@ class Platform:
     def resolve_collision(self):
         if player.vy > player.max_landing_speed:
             return player.die()
-    
-        world.set_repawn_objects()
+
         player.platform = self
         player.delta_frame = -1
         player.reset()
@@ -545,6 +564,7 @@ class HUD:
         for element in self.elements:
             element.update()
 
+
 class ParticleGenerator:
     def launch(self):
         options = {
@@ -556,13 +576,13 @@ class ParticleGenerator:
             "rotation_range": (1, 10),
             "growth_range": (50, 75),
             "grow_time": 0.4,
-            "shrink_time": 0.6
+            "shrink_time": 0.6,
         }
         self.create_particles(options)
 
         options["angle_range"] = (math.pi - 0.3, math.pi + 0.3)
         self.create_particles(options)
-    
+
     def thrust(self, direction):
         delta_angle = math.atan2(player.y_thrust, player.x_thrust) * direction
         options = {
@@ -574,7 +594,7 @@ class ParticleGenerator:
             "rotation_range": (1, 10),
             "growth_range": (20, 40),
             "grow_time": 0.4,
-            "shrink_time": 0.6
+            "shrink_time": 0.6,
         }
         self.create_particles(options, True)
 
@@ -588,11 +608,11 @@ class ParticleGenerator:
             "rotation_range": (1, 10),
             "growth_range": (150, 250),
             "grow_time": 0.2,
-            "shrink_time": 2
+            "shrink_time": 2,
         }
         self.create_particles(options)
 
-    def create_particles(self, options, relative_speed = False):
+    def create_particles(self, options, relative_speed=False):
         num_range = options["num_range"]
         x = options["x"]
         y = options["y"]
@@ -623,6 +643,7 @@ class ParticleGenerator:
 
             particles.append(Particle(x, y, vx, vy, rotation, growth, grow_time, shrink_time))
 
+
 class Particle:
     def __init__(self, x, y, vx, vy, rotate, growth, grow_time, shrink_time):
         self.x = x
@@ -642,9 +663,11 @@ class Particle:
     def draw(self):
         if self.radius <= 0:
             return
-        
-        points = hexagon_points(self.x - game_window.left, self.y - game_window.top, self.radius, self.rotation)
-        pygame.draw.polygon(screen, 'white', points)
+
+        points = hexagon_points(
+            self.x - game_window.left, self.y - game_window.top, self.radius, self.rotation
+        )
+        pygame.draw.polygon(screen, "white", points)
 
     def update(self):
         self.x += self.vx * dt
@@ -661,6 +684,7 @@ class Particle:
             return particles.remove(self)
 
         self.time += dt
+
 
 class FuelMeter:
     def __init__(self):
@@ -716,12 +740,13 @@ class FuelMeter:
 
             pygame.draw.polygon(screen, "white", points)
 
+
 def check_collision(obj1, obj2):
     left = round(obj1.x + obj1.w, 6) > round(obj2.x, 6)
     right = round(obj1.x, 6) < round(obj2.x + obj2.w, 6)
     top = round(obj1.y + obj1.h, 6) > round(obj2.y, 6)
     bottom = round(obj1.y, 6) < round(obj2.y + obj2.h, 6)
-    
+
     if left and right and top and bottom:
         obj2.resolve_collision()
 
@@ -739,7 +764,7 @@ def center_y(obj):
     return obj.y + obj.h / 2
 
 
-def hexagon_points(center_x, center_y, radius, rotation = 0):
+def hexagon_points(center_x, center_y, radius, rotation=0):
     points = []
 
     for n in range(6):
@@ -750,13 +775,16 @@ def hexagon_points(center_x, center_y, radius, rotation = 0):
 
     return points
 
+
 def setup():
     platform = Platform(0, 0)
     world.objects["platform"].append(platform)
     platform.x = player.w / 2 - platform.w / 2
     platform.y = world.highest_in_range(platform.x, platform.x + platform.w) - platform.h
+    world.object_generators["platform"].respawn["x"] = platform.x
     player.platform = platform
     player.y = platform.y - player.h
+
 
 # Global Variables
 hud = HUD()
