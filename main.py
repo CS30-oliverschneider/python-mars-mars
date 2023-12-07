@@ -44,7 +44,7 @@ class Player:
         self.launch_speed_y = -300
 
         self.fuel = 6
-        self.delta_fuel = 3
+        self.delta_fuel = 1
 
     def draw(self):
         if self.delta_frame != 0 and frame_count % self.anim_speed == 0:
@@ -118,8 +118,17 @@ class Player:
         particle_generator.launch()
 
     def check_object_collision(self):
+        player_rect = (self.x, self.y, self.w, self.h)
+
         for platform in world.objects["platform"]:
-            check_collision(self, platform)
+            platform_rect = (platform.x, platform.y, platform.w, platform.h)
+            if check_rr_collision(player_rect, platform_rect):
+                platform.resolve_collision()
+
+        for spring in world.objects["spring"]:
+            spring_circle = (spring.bob_x, spring.bob_y, spring.bob_r)
+            if check_cr_collision(player_rect, spring_circle):
+                spring.resolve_collision()
 
     def check_terrain_collision(self):
         if (self.state != "launched" and self.state != "flying") or world.highest > self.y + self.h:
@@ -410,9 +419,11 @@ class ObjectGenerator:
     def remove_objects(self):
         if self.objects[-1].x > game_window.right:
             self.objects.pop()
+            self.update_dist()
 
         if self.objects[0].x + self.objects[0].w < game_window.left:
             self.objects.pop(0)
+            self.update_dist()
 
     def update_dist(self):
         self.right = {"x": self.objects[-1].x, "seed_offset": self.objects[-1].seed_offset}
@@ -426,19 +437,19 @@ class Spring:
     def __init__(self, x, seed_offset):
         self.stop_length = 200
         self.line_width = 5
-        self.r = 20
+        self.bob_r = 20
 
         self.x = x
-        self.w = self.r * 2
+        self.w = self.bob_r * 2
         self.seed_offset = seed_offset
         self.acceleration_up = 10
         self.damping = 3
 
-        range = (self.x + self.r - self.line_width / 2, self.x + self.r + self.line_width / 2)
-        self.y = world.highest_in_range(range[0], range[1]) - self.stop_length - self.r
+        range = (self.x + self.bob_r - self.line_width / 2, self.x + self.bob_r + self.line_width / 2)
+        self.y = world.highest_in_range(range[0], range[1]) - self.stop_length - self.bob_r
 
-        self.anchor_x = self.x + self.r
-        self.anchor_y = self.y + self.r + self.stop_length
+        self.anchor_x = self.x + self.bob_r
+        self.anchor_y = self.y + self.bob_r + self.stop_length
 
         self.bob_mass = 50
         self.bob_x = self.anchor_x
@@ -455,8 +466,7 @@ class Spring:
         bob_y = self.bob_y - game_window.top
 
         pygame.draw.line(screen, "blue", (anchor_x, anchor_y), (bob_x, bob_y), self.line_width)
-        pygame.draw.circle(screen, "blue", (bob_x, bob_y), 20)
-        pygame.draw.circle(screen, "blue", (bob_x, bob_y), 20)
+        pygame.draw.circle(screen, "blue", (bob_x, bob_y), self.bob_r)
 
     def update(self):
         self.update_velocity()
@@ -482,10 +492,6 @@ class Spring:
         self.bob_x += self.bob_vx
         self.bob_y += self.bob_vy
 
-        if abs(self.bob_vx) < 0.01 and abs(self.bob_vy) < 0.01:
-            self.bob_x = self.anchor_x
-            self.bob_y = self.anchor_y - self.stop_length
-
         if pygame.mouse.get_pressed()[1]:
             mouse_coords = pygame.mouse.get_pos()
             self.bob_x = mouse_coords[0] + game_window.left
@@ -493,6 +499,10 @@ class Spring:
 
             self.bob_vx = 0
             self.bob_vy = 0
+
+    def resolve_collision(self):
+        self.bob_vy += 5
+        player.vy -= 300
 
 
 class Platform:
@@ -741,14 +751,36 @@ class FuelMeter:
             pygame.draw.polygon(screen, "white", points)
 
 
-def check_collision(obj1, obj2):
-    left = round(obj1.x + obj1.w, 6) > round(obj2.x, 6)
-    right = round(obj1.x, 6) < round(obj2.x + obj2.w, 6)
-    top = round(obj1.y + obj1.h, 6) > round(obj2.y, 6)
-    bottom = round(obj1.y, 6) < round(obj2.y + obj2.h, 6)
+def check_rr_collision(rect1, rect2):
+    left = round(rect1[0] + rect1[2], 6) > round(rect2[0], 6)
+    right = round(rect1[0], 6) < round(rect2[0] + rect2[2], 6)
+    top = round(rect1[1] + rect1[3], 6) > round(rect2[1], 6)
+    bottom = round(rect1[1], 6) < round(rect2[1] + rect2[3], 6)
 
     if left and right and top and bottom:
-        obj2.resolve_collision()
+        return True
+
+def check_cr_collision(rect, circle):
+    test_x = circle[0]
+    test_y = circle[1]
+
+    if circle[0] < rect[0]:
+        test_x = rect[0]
+    elif circle[0] > rect[0] + rect[2]:
+        test_x = rect[0] + rect[2]
+    
+    if circle[1] < rect[1]:
+        test_y = rect[1]
+    elif circle[1] > rect[1] + rect[3]:
+        test_y = rect[1] + rect[3]
+
+    dist_x = circle[0] - test_x
+    dist_y = circle[1] - test_y
+    dist = math.sqrt(dist_x ** 2 + dist_y ** 2)
+
+    if dist < circle[2]:
+        return True
+    return False
 
 
 def random_float(max, min, seed_offset=0):
