@@ -435,29 +435,29 @@ class ObjectGenerator:
 
 class Spring:
     def __init__(self, x, seed_offset):
+        self.x = x
+        self.seed_offset = seed_offset
+
         self.stop_length = 200
         self.line_width = 5
-        self.bob_r = 20
+        self.bob_r = 30
+        self.acceleration_up = 20
+        self.damping = 0.2
+        self.bob_mass = 0.1
 
-        self.x = x
+        check_range = (self.x + self.bob_r - self.line_width / 2, self.x + self.bob_r + self.line_width / 2)
+        self.y = world.highest_in_range(check_range[0], check_range[1]) - self.stop_length - self.bob_r
         self.w = self.bob_r * 2
-        self.seed_offset = seed_offset
-        self.acceleration_up = 10
-        self.damping = 3
-
-        range = (self.x + self.bob_r - self.line_width / 2, self.x + self.bob_r + self.line_width / 2)
-        self.y = world.highest_in_range(range[0], range[1]) - self.stop_length - self.bob_r
 
         self.anchor_x = self.x + self.bob_r
         self.anchor_y = self.y + self.bob_r + self.stop_length
 
-        self.bob_mass = 50
         self.bob_x = self.anchor_x
         self.bob_y = self.anchor_y - self.stop_length
         self.bob_vx = 0
         self.bob_vy = 0
 
-        self.rest_length = self.stop_length - self.acceleration_up * self.bob_mass
+        self.rest_y = self.stop_length - self.acceleration_up * self.bob_mass
 
     def draw(self):
         anchor_x = self.anchor_x - game_window.left
@@ -473,24 +473,21 @@ class Spring:
         self.move()
 
     def update_velocity(self):
-        length = math.sqrt((self.bob_x - self.anchor_x) ** 2 + (self.bob_y - self.anchor_y) ** 2)
-        stretch = length - self.rest_length
-        sine = (self.bob_x - self.anchor_x) / length
-        cosine = (self.bob_y - self.anchor_y) / length
+        spring_x = (self.anchor_x - self.bob_x) / self.bob_mass
+        damping_x = self.damping * self.bob_vx / self.bob_mass
 
-        ax = -1 / self.bob_mass * stretch * sine - self.damping / self.bob_mass * self.bob_vx
-        ay = (
-            -1 / self.bob_mass * stretch * cosine
-            - self.damping / self.bob_mass * self.bob_vy
-            - self.acceleration_up
-        )
+        spring_y = ((self.anchor_y - self.rest_y) - self.bob_y) / self.bob_mass
+        damping_y = self.damping * self.bob_vy / self.bob_mass
 
-        self.bob_vx += ax
-        self.bob_vy += ay
+        ax = spring_x - damping_x
+        ay = spring_y - damping_y - self.acceleration_up
+
+        self.bob_vx += ax * dt
+        self.bob_vy += ay * dt
 
     def move(self):
-        self.bob_x += self.bob_vx
-        self.bob_y += self.bob_vy
+        self.bob_x += self.bob_vx * dt
+        self.bob_y += self.bob_vy * dt
 
         if pygame.mouse.get_pressed()[1]:
             mouse_coords = pygame.mouse.get_pos()
@@ -501,8 +498,19 @@ class Spring:
             self.bob_vy = 0
 
     def resolve_collision(self):
-        self.bob_vy += 5
-        player.vy -= 300
+        dx = max(player.x - self.bob_x, 0, self.bob_x - (player.x + player.w))
+        dy = max(player.y - self.bob_y, 0, self.bob_y - (player.y + player.h))
+
+        sign_x = 1 if self.bob_x < player.x + player.w / 2 else -1
+        sign_y = 1 if self.bob_y < player.y + player.h / 2 else -1
+
+        theta = math.atan2(dy * sign_y, dx * sign_x)
+
+        player.vx += 300 * math.cos(theta)
+        player.vy += 300 * math.sin(theta)
+
+        self.bob_vx += 300 * math.cos(theta + math.pi) + player.vx * 0.5
+        self.bob_vy += 300 * math.sin(theta + math.pi) + player.vy * 0.5
 
 
 class Platform:
@@ -760,6 +768,7 @@ def check_rr_collision(rect1, rect2):
     if left and right and top and bottom:
         return True
 
+
 def check_cr_collision(rect, circle):
     test_x = circle[0]
     test_y = circle[1]
@@ -768,7 +777,7 @@ def check_cr_collision(rect, circle):
         test_x = rect[0]
     elif circle[0] > rect[0] + rect[2]:
         test_x = rect[0] + rect[2]
-    
+
     if circle[1] < rect[1]:
         test_y = rect[1]
     elif circle[1] > rect[1] + rect[3]:
@@ -776,7 +785,7 @@ def check_cr_collision(rect, circle):
 
     dist_x = circle[0] - test_x
     dist_y = circle[1] - test_y
-    dist = math.sqrt(dist_x ** 2 + dist_y ** 2)
+    dist = math.sqrt(dist_x**2 + dist_y**2)
 
     if dist < circle[2]:
         return True
