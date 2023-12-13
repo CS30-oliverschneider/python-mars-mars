@@ -133,9 +133,7 @@ class Player:
                 spring.resolve_collision()
 
     def check_terrain_collision(self):
-        if (
-            self.state != "launched" and self.state != "flying"
-        ) or world.highest > self.y + self.h:
+        if (self.state != "launched" and self.state != "flying") or world.highest > self.y + self.h:
             return
 
         highest_y = world.highest_in_range(self.x, self.x + self.w)
@@ -201,12 +199,8 @@ class World:
             spring.update()
 
     def create_generators(self):
-        self.platform_generator = ObjectGenerator(
-            Platform, self.objects["platform"], 500, 800
-        )
-        self.spring_generator = ObjectGenerator(
-            Spring, self.objects["spring"], 200, 400
-        )
+        self.platform_generator = ObjectGenerator(Platform, self.objects["platform"], 500, 800)
+        self.spring_generator = ObjectGenerator(Spring, self.objects["spring"], 200, 400)
         self.object_generators = {
             "platform": self.platform_generator,
             "spring": self.spring_generator,
@@ -264,9 +258,7 @@ class World:
             respawn = generator.respawn
 
             self.objects[key].clear()
-            self.objects[key].append(
-                generator.object_class(respawn["x"], respawn["seed_offset"])
-            )
+            self.objects[key].append(generator.object_class(respawn["x"], respawn["seed_offset"]))
             generator.update_dist()
 
     def set_respawn_objects(self):
@@ -313,12 +305,9 @@ class TerrainGenerator:
 
         while (
             layer.draw_point(prev_index)[0] >= -self.window_offset - self.max_dist_x
-            and layer.draw_point(prev_index)[0]
-            <= display_size[0] + self.window_offset + self.max_dist_x
+            and layer.draw_point(prev_index)[0] <= display_size[0] + self.window_offset + self.max_dist_x
         ):
-            terrain_point = self.new_terrain_point(
-                layer.points[prev_index], direction, layer.noise_params
-            )
+            terrain_point = self.new_terrain_point(layer.points[prev_index], direction, layer.noise_params)
 
             if direction == 1:
                 layer.points.append(terrain_point)
@@ -389,9 +378,7 @@ class TerrainLayer:
 
 
 class NoiseParams:
-    def __init__(
-        self, octaves, persistence, lacunarity, x_scale, y_scale, x_offset, y_offset
-    ):
+    def __init__(self, octaves, persistence, lacunarity, x_scale, y_scale, x_offset, y_offset):
         self.octaves = octaves
         self.persistence = persistence
         self.lacunarity = lacunarity
@@ -450,12 +437,8 @@ class ObjectGenerator:
         }
         self.left = {"x": self.objects[0].x, "seed_offset": self.objects[0].seed_offset}
 
-        self.dist_right = random_float(
-            self.max_dist, self.min_dist, self.right["seed_offset"] + 0.5
-        )
-        self.dist_left = random_float(
-            self.max_dist, self.min_dist, self.left["seed_offset"] - 0.5
-        )
+        self.dist_right = random_float(self.max_dist, self.min_dist, self.right["seed_offset"] + 0.5)
+        self.dist_left = random_float(self.max_dist, self.min_dist, self.left["seed_offset"] - 0.5)
 
 
 class Spring:
@@ -475,11 +458,7 @@ class Spring:
             self.x + self.bob_r - self.line_width / 2,
             self.x + self.bob_r + self.line_width / 2,
         )
-        self.y = (
-            world.highest_in_range(check_range[0], check_range[1])
-            - self.stop_length
-            - self.bob_r
-        )
+        self.y = world.highest_in_range(check_range[0], check_range[1]) - self.stop_length - self.bob_r
         self.w = self.bob_r * 2
 
         self.anchor_x = self.x + self.bob_r
@@ -498,9 +477,7 @@ class Spring:
         bob_x = self.bob_x - game_window.left
         bob_y = self.bob_y - game_window.top
 
-        pygame.draw.line(
-            screen, "blue", (anchor_x, anchor_y), (bob_x, bob_y), self.line_width
-        )
+        pygame.draw.line(screen, "blue", (anchor_x, anchor_y), (bob_x, bob_y), self.line_width)
         pygame.draw.circle(screen, "blue", (bob_x, bob_y), self.bob_r)
 
     def update(self):
@@ -540,30 +517,39 @@ class Spring:
         sign_y = 1 if self.bob_y < player.y + player.h / 2 else -1
 
         theta = math.atan2(dy * sign_y, dx * sign_x)
-
         total_mass = player.mass + self.bob_mass
-        player_speed = math.sqrt(player.vx ** 2 + player.vy ** 2)
-        player_v1 = player_speed * math.cos(theta)
-        player_v2 = player_speed * math.sin(theta)
-        bob_speed = math.sqrt(self.bob_vx ** 2 + self.bob_vy ** 2)
-        bob_v1 = bob_speed * math.cos(theta)
-        bob_v2 = bob_speed * math.sin(theta)
 
-        bob_impulse_vx = self.bounciness * self.bob_mass * (self.bob_vx - player.vx)
-        player_impulse_vx = self.bounciness * player.mass * (player.vx - self.bob_vx)
-        player_momentum_vx = player.mass * player.vx
-        bob_momentum_vx = self.bob_mass * self.bob_vx
+        player_theta = math.atan2(player.vy, player.vx) - theta
+        player_speed = math.sqrt(player.vx**2 + player.vy**2)
+        player_v1 = player_speed * math.cos(player_theta)
+        player_v2 = player_speed * math.sin(player_theta)
 
-        bob_impulse_vy = self.bounciness * self.bob_mass * (self.bob_vy - player.vy)
-        player_impulse_vy = self.bounciness * player.mass * (player.vy - self.bob_vy)
-        player_momentum_vy = player.mass * player.vy
-        bob_momentum_vy = self.bob_mass * self.bob_vy
+        bob_theta = math.atan2(self.bob_vy, self.bob_vx) - theta
+        bob_speed = math.sqrt(self.bob_vx**2 + self.bob_vy**2)
+        bob_v1 = bob_speed * math.cos(bob_theta)
+        bob_v2 = bob_speed * math.sin(bob_theta)
 
-        player.vx = (bob_impulse_vx + player_momentum_vx + bob_momentum_vx) / total_mass
-        self.bob_vx = (player_impulse_vx + player_momentum_vx + bob_momentum_vx) / total_mass
+        player_transfer_1 = self.bounciness * player.mass * (player_v1 - bob_v1)
+        player_momentum_1 = player.mass * player_v1
+        player_transfer_2 = self.bounciness * player.mass * (player_v2 - bob_v2)
+        player_momentum_2 = player.mass * player_v2
 
-        player.vy = (bob_impulse_vy + player_momentum_vy + bob_momentum_vy) / total_mass
-        self.bob_vy = (player_impulse_vy + player_momentum_vy + bob_momentum_vy) / total_mass
+        bob_transfer_1 = self.bounciness * self.bob_mass * (bob_v1 - player_v1)
+        bob_momentum_1 = self.bob_mass * bob_v1
+        bob_transfer_2 = self.bounciness * self.bob_mass * (bob_v2 - player_v2)
+        bob_momentum_2 = self.bob_mass * bob_v2
+
+        new_player_v1 = (bob_transfer_1 + player_momentum_1 + bob_momentum_1) / total_mass + 100
+        new_player_v2 = (bob_transfer_2 + player_momentum_2 + bob_momentum_2) / total_mass
+
+        new_bob_v1 = (player_transfer_1 + player_momentum_1 + bob_momentum_1) / total_mass
+        new_bob_v2 = (player_transfer_2 + player_momentum_2 + bob_momentum_2) / total_mass
+
+        player.vx = new_player_v1 * math.cos(theta) + new_player_v2 * math.cos(theta + math.pi / 2)
+        player.vy = new_player_v1 * math.sin(theta) + new_player_v2 * math.sin(theta + math.pi / 2)
+
+        self.bob_vx = new_bob_v1 * math.cos(theta) + new_bob_v2 * math.cos(theta + math.pi / 2)
+        self.bob_vy = new_bob_v1 * math.sin(theta) + new_bob_v2 * math.sin(theta + math.pi / 2)
 
 
 class Platform:
@@ -715,9 +701,7 @@ class ParticleGenerator:
                 vx += player.vx
                 vy += player.vy
 
-            particles.append(
-                Particle(x, y, vx, vy, rotation, growth, grow_time, shrink_time)
-            )
+            particles.append(Particle(x, y, vx, vy, rotation, growth, grow_time, shrink_time))
 
 
 class Particle:
@@ -882,9 +866,7 @@ def setup():
     platform = Platform(0, 0)
     world.objects["platform"].append(platform)
     platform.x = player.w / 2 - platform.w / 2
-    platform.y = (
-        world.highest_in_range(platform.x, platform.x + platform.w) - platform.h
-    )
+    platform.y = world.highest_in_range(platform.x, platform.x + platform.w) - platform.h
     world.object_generators["platform"].respawn["x"] = platform.x
     player.platform = platform
     player.y = platform.y - player.h
