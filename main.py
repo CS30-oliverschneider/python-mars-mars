@@ -451,7 +451,7 @@ class Spring:
         self.bob_r = 30
         self.acceleration_up = 40
         self.damping = 0.1
-        self.bob_mass = 0.05
+        self.bob_mass = 0.01
         self.bounciness = 1
 
         check_range = (
@@ -517,6 +517,7 @@ class Spring:
         sign_y = 1 if self.bob_y < player.y + player.h / 2 else -1
 
         theta = math.atan2(dy * sign_y, dx * sign_x)
+        theta = math.atan2(player.y - self.bob_y, player.x - self.bob_x)
         total_mass = player.mass + self.bob_mass
 
         player_theta = math.atan2(player.vy, player.vx) - theta
@@ -531,26 +532,18 @@ class Spring:
 
         player_transfer_1 = self.bounciness * player.mass * (player_v1 - bob_v1)
         player_momentum_1 = player.mass * player_v1
-        player_transfer_2 = self.bounciness * player.mass * (player_v2 - bob_v2)
-        player_momentum_2 = player.mass * player_v2
 
-        bob_transfer_1 = self.bounciness * self.bob_mass * (bob_v1 - player_v1)
+        bob_transfer_1 = self.bounciness * self.bob_mass * (bob_v1 - player_v1) + 1
         bob_momentum_1 = self.bob_mass * bob_v1
-        bob_transfer_2 = self.bounciness * self.bob_mass * (bob_v2 - player_v2)
-        bob_momentum_2 = self.bob_mass * bob_v2
 
-        new_player_v1 = (bob_transfer_1 + player_momentum_1 + bob_momentum_1) / total_mass + 100
-        new_player_v2 = (bob_transfer_2 + player_momentum_2 + bob_momentum_2) / total_mass
-
+        new_player_v1 = (bob_transfer_1 + player_momentum_1 + bob_momentum_1) / total_mass
         new_bob_v1 = (player_transfer_1 + player_momentum_1 + bob_momentum_1) / total_mass
-        new_bob_v2 = (player_transfer_2 + player_momentum_2 + bob_momentum_2) / total_mass
+        
+        player.vx = new_player_v1 * math.cos(theta) + player_v2 * math.cos(theta + math.pi / 2)
+        player.vy = new_player_v1 * math.sin(theta) + player_v2 * math.sin(theta + math.pi / 2)
 
-        player.vx = new_player_v1 * math.cos(theta) + new_player_v2 * math.cos(theta + math.pi / 2)
-        player.vy = new_player_v1 * math.sin(theta) + new_player_v2 * math.sin(theta + math.pi / 2)
-
-        self.bob_vx = new_bob_v1 * math.cos(theta) + new_bob_v2 * math.cos(theta + math.pi / 2)
-        self.bob_vy = new_bob_v1 * math.sin(theta) + new_bob_v2 * math.sin(theta + math.pi / 2)
-
+        self.bob_vx = new_bob_v1 * math.cos(theta) + bob_v2 * math.cos(theta + math.pi / 2)
+        self.bob_vy = new_bob_v1 * math.sin(theta) + bob_v2 * math.sin(theta + math.pi / 2)
 
 class Platform:
     def __init__(self, x, seed_offset):
@@ -815,22 +808,9 @@ def check_rr_collision(rect1, rect2):
 
 
 def check_cr_collision(rect, circle):
-    test_x = circle[0]
-    test_y = circle[1]
-
-    if circle[0] < rect[0]:
-        test_x = rect[0]
-    elif circle[0] > rect[0] + rect[2]:
-        test_x = rect[0] + rect[2]
-
-    if circle[1] < rect[1]:
-        test_y = rect[1]
-    elif circle[1] > rect[1] + rect[3]:
-        test_y = rect[1] + rect[3]
-
-    dist_x = circle[0] - test_x
-    dist_y = circle[1] - test_y
-    dist = math.sqrt(dist_x**2 + dist_y**2)
+    dx = max(rect[0] - circle[0], 0, circle[0] - (rect[0] + rect[2]))
+    dy = max(rect[1] - circle[1], 0, circle[1] - (rect[1] + rect[3]))
+    dist = math.sqrt(dx ** 2 + dy ** 2)
 
     if dist < circle[2]:
         return True
