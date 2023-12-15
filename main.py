@@ -16,7 +16,7 @@ class Player:
         self.w = 40
         self.h = 40
 
-        self.mass = 0.01
+        self.mass = 1
 
         self.img = pygame.image.load("img/spritesheet.png")
         self.img_x = 0
@@ -450,26 +450,26 @@ class Spring:
         self.line_width = 5
         self.bob_r = 30
         self.acceleration_up = 40
-        self.damping = 0.1
-        self.bob_mass = 0.01
-        self.bounciness = 1
+        self.damping = 5
+        self.bob_mass = 2
+        self.k = 100
+        self.min_bounce = 100
 
         check_range = (
             self.x + self.bob_r - self.line_width / 2,
             self.x + self.bob_r + self.line_width / 2,
         )
-        self.y = world.highest_in_range(check_range[0], check_range[1]) - self.stop_length - self.bob_r
         self.w = self.bob_r * 2
 
         self.anchor_x = self.x + self.bob_r
-        self.anchor_y = self.y + self.bob_r + self.stop_length
+        self.anchor_y = world.highest_in_range(check_range[0], check_range[1])
 
         self.bob_x = self.anchor_x
         self.bob_y = self.anchor_y - self.stop_length
         self.bob_vx = 0
         self.bob_vy = 0
 
-        self.rest_y = self.stop_length - self.acceleration_up * self.bob_mass
+        self.rest_y = self.acceleration_up * self.bob_mass / -self.k + self.stop_length
 
     def draw(self):
         anchor_x = self.anchor_x - game_window.left
@@ -483,12 +483,15 @@ class Spring:
     def update(self):
         self.update_velocity()
         self.move()
+        self.x = min(self.bob_x - self.bob_r, self.anchor_x - self.line_width / 2)
+        self.w = max(self.bob_x + self.bob_r, self.anchor_x + self.line_width / 2) - self.x
+        print(self.w)
 
     def update_velocity(self):
-        spring_x = (self.anchor_x - self.bob_x) / self.bob_mass
+        spring_x = -self.k * (self.bob_x - self.anchor_x) / self.bob_mass
         damping_x = self.damping * self.bob_vx / self.bob_mass
 
-        spring_y = ((self.anchor_y - self.rest_y) - self.bob_y) / self.bob_mass
+        spring_y = -self.k * (self.bob_y - (self.anchor_y - self.rest_y)) / self.bob_mass
         damping_y = self.damping * self.bob_vy / self.bob_mass
 
         ax = spring_x - damping_x
@@ -510,40 +513,47 @@ class Spring:
             self.bob_vy = 0
 
     def resolve_collision(self):
+        # Calculate the distance between the player and the bob
         dx = max(player.x - self.bob_x, 0, self.bob_x - (player.x + player.w))
         dy = max(player.y - self.bob_y, 0, self.bob_y - (player.y + player.h))
-
-        sign_x = 1 if self.bob_x < player.x + player.w / 2 else -1
-        sign_y = 1 if self.bob_y < player.y + player.h / 2 else -1
-
-        theta = math.atan2(dy * sign_y, dx * sign_x)
-        theta = math.atan2(player.y - self.bob_y, player.x - self.bob_x)
-        total_mass = player.mass + self.bob_mass
-
-        player_theta = math.atan2(player.vy, player.vx) - theta
-        player_speed = math.sqrt(player.vx**2 + player.vy**2)
-        player_v1 = player_speed * math.cos(player_theta)
-        player_v2 = player_speed * math.sin(player_theta)
-
-        bob_theta = math.atan2(self.bob_vy, self.bob_vx) - theta
-        bob_speed = math.sqrt(self.bob_vx**2 + self.bob_vy**2)
-        bob_v1 = bob_speed * math.cos(bob_theta)
-        bob_v2 = bob_speed * math.sin(bob_theta)
-
-        player_transfer_1 = self.bounciness * player.mass * (player_v1 - bob_v1)
-        player_momentum_1 = player.mass * player_v1
-
-        bob_transfer_1 = self.bounciness * self.bob_mass * (bob_v1 - player_v1) + 1
-        bob_momentum_1 = self.bob_mass * bob_v1
-
-        new_player_v1 = (bob_transfer_1 + player_momentum_1 + bob_momentum_1) / total_mass
-        new_bob_v1 = (player_transfer_1 + player_momentum_1 + bob_momentum_1) / total_mass
+        dist = math.sqrt(dx ** 2 + dy ** 2)
         
-        player.vx = new_player_v1 * math.cos(theta) + player_v2 * math.cos(theta + math.pi / 2)
-        player.vy = new_player_v1 * math.sin(theta) + player_v2 * math.sin(theta + math.pi / 2)
+        # Calculate the overlap and the normal between the player and the bob
+        sign_x = 1 if player.x + player.w / 2 > self.bob_x else -1
+        sign_y = 1 if player.y + player.h / 2 > self.bob_y else -1
+        overlap = self.bob_r - dist
+        normal = math.atan2(dy * sign_y, dx * sign_x)
+        move_x = overlap * math.cos(normal)
+        move_y = overlap * math.sin(normal)
+        
+        # Separate the player and the bob
+        self.bob_x -= move_x / 2
+        self.bob_y -= move_y / 2
+        player.x += move_x / 2
+        player.y += move_y / 2
 
-        self.bob_vx = new_bob_v1 * math.cos(theta) + bob_v2 * math.cos(theta + math.pi / 2)
-        self.bob_vy = new_bob_v1 * math.sin(theta) + bob_v2 * math.sin(theta + math.pi / 2)
+        total_mass = player.mass + self.bob_mass
+        
+        # Find the parallel and perpendicular velocity components along the normal
+        player_angle = math.atan2(player.vy, player.vx)
+        player_speed = math.sqrt(player.vx ** 2 + player.vy ** 2)
+        player_v1 = player_speed * math.cos(player_angle - normal)
+        player_v2 = player_speed * math.sin(player_angle - normal)
+
+        bob_angle = math.atan2(self.bob_vy, self.bob_vx)
+        bob_speed = math.sqrt(self.bob_vx ** 2 + self.bob_vy ** 2)
+        bob_v1 = bob_speed * math.cos(bob_angle - normal)
+        bob_v2 = bob_speed * math.sin(bob_angle - normal)
+        
+        # Find new parallel velocities after an elastic collision
+        new_player_v1 = player_v1 * (player.mass - self.bob_mass) / total_mass + bob_v1 * 2 * self.bob_mass / total_mass + self.min_bounce
+        new_bob_v1 = bob_v1 * (self.bob_mass - player.mass) / total_mass + player_v1 * 2 * player.mass / total_mass
+
+        # Update velocities
+        player.vx = new_player_v1 * math.cos(normal) + player_v2 * math.cos(normal + math.pi / 2)
+        player.vy = new_player_v1 * math.sin(normal) + player_v2 * math.sin(normal + math.pi / 2)
+        self.bob_vx = new_bob_v1 * math.cos(normal) + bob_v2 * math.cos(normal + math.pi / 2)
+        self.bob_vy = new_bob_v1 * math.sin(normal) + bob_v2 * math.sin(normal + math.pi / 2)
 
 class Platform:
     def __init__(self, x, seed_offset):
