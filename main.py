@@ -122,12 +122,12 @@ class Player:
     def check_object_collision(self):
         player_rect = (self.x, self.y, self.w, self.h)
 
-        for platform in world.objects["platform"]:
+        for platform in world.objects["platforms"]:
             platform_rect = (platform.x, platform.y, platform.w, platform.h)
             if check_rr_collision(player_rect, platform_rect):
                 platform.resolve_collision()
 
-        for spring in world.objects["spring"]:
+        for spring in world.objects["springs"]:
             spring_circle = (spring.bob_x, spring.bob_y, spring.bob_r)
             if check_cr_collision(player_rect, spring_circle):
                 spring.resolve_collision()
@@ -176,16 +176,11 @@ class World:
         self.create_layers()
         self.terrain_generator = TerrainGenerator(self)
 
-        self.objects = {"platform": [], "spring": []}
+        self.objects = {"platforms": [], "springs": []}
 
     def draw(self):
         for layer in reversed(self.layers):
-            draw_points = [layer.draw_point(i) for i in range(len(layer.points))]
-
-            draw_points.append((display_size[0], display_size[1]))
-            draw_points.append((0, display_size[1]))
-
-            pygame.draw.polygon(screen, layer.color, draw_points)
+            self.draw_terrain_layer(layer)
 
         for object_list in self.objects.values():
             for game_object in object_list:
@@ -195,15 +190,23 @@ class World:
         self.terrain_generator.update()
         for generator in self.object_generators.values():
             generator.update()
-        for spring in self.objects["spring"]:
+        for spring in self.objects["springs"]:
             spring.update()
 
+    def draw_terrain_layer(self, layer):
+            draw_points = [layer.draw_point(i) for i in range(len(layer.points))]
+
+            draw_points.append((display_size[0], display_size[1]))
+            draw_points.append((0, display_size[1]))
+
+            pygame.draw.polygon(screen, layer.color, draw_points)
+
     def create_generators(self):
-        self.platform_generator = ObjectGenerator(Platform, self.objects["platform"], 500, 800)
-        self.spring_generator = ObjectGenerator(Spring, self.objects["spring"], 200, 400)
+        self.platform_generator = ObjectGenerator(Platform, self.objects["platforms"], 500, 800)
+        self.spring_generator = ObjectGenerator(Spring, self.objects["springs"], 200, 400)
         self.object_generators = {
-            "platform": self.platform_generator,
-            "spring": self.spring_generator,
+            "platforms": self.platform_generator,
+            "springs": self.spring_generator,
         }
 
     def create_layers(self):
@@ -454,6 +457,7 @@ class Spring:
         self.bob_mass = 2
         self.k = 100
         self.min_bounce = 100
+        self.friction = 0.1
 
         check_range = (
             self.x + self.bob_r - self.line_width / 2,
@@ -462,7 +466,7 @@ class Spring:
         self.w = self.bob_r * 2
 
         self.anchor_x = self.x + self.bob_r
-        self.anchor_y = world.highest_in_range(check_range[0], check_range[1])
+        self.anchor_y = world.highest_in_range(check_range[0], check_range[1]) + 10
 
         self.bob_x = self.anchor_x
         self.bob_y = self.anchor_y - self.stop_length
@@ -485,7 +489,6 @@ class Spring:
         self.move()
         self.x = min(self.bob_x - self.bob_r, self.anchor_x - self.line_width / 2)
         self.w = max(self.bob_x + self.bob_r, self.anchor_x + self.line_width / 2) - self.x
-        print(self.w)
 
     def update_velocity(self):
         spring_x = -self.k * (self.bob_x - self.anchor_x) / self.bob_mass
@@ -547,13 +550,15 @@ class Spring:
         
         # Find new parallel velocities after an elastic collision
         new_player_v1 = player_v1 * (player.mass - self.bob_mass) / total_mass + bob_v1 * 2 * self.bob_mass / total_mass + self.min_bounce
+        new_player_v2 = player_v2 * (1 - self.friction)
         new_bob_v1 = bob_v1 * (self.bob_mass - player.mass) / total_mass + player_v1 * 2 * player.mass / total_mass
+        new_bob_v2 = bob_v2 + player_v2 * self.friction
 
         # Update velocities
-        player.vx = new_player_v1 * math.cos(normal) + player_v2 * math.cos(normal + math.pi / 2)
-        player.vy = new_player_v1 * math.sin(normal) + player_v2 * math.sin(normal + math.pi / 2)
-        self.bob_vx = new_bob_v1 * math.cos(normal) + bob_v2 * math.cos(normal + math.pi / 2)
-        self.bob_vy = new_bob_v1 * math.sin(normal) + bob_v2 * math.sin(normal + math.pi / 2)
+        player.vx = new_player_v1 * math.cos(normal) + new_player_v2 * math.cos(normal + math.pi / 2)
+        player.vy = new_player_v1 * math.sin(normal) + new_player_v2 * math.sin(normal + math.pi / 2)
+        self.bob_vx = new_bob_v1 * math.cos(normal) + new_bob_v2 * math.cos(normal + math.pi / 2)
+        self.bob_vy = new_bob_v1 * math.sin(normal) + new_bob_v2 * math.sin(normal + math.pi / 2)
 
 class Platform:
     def __init__(self, x, seed_offset):
@@ -826,6 +831,75 @@ def check_cr_collision(rect, circle):
         return True
     return False
 
+def sat(rect1, rect2):
+  rects = [rect1, rect2]
+  
+  normals = []
+  for rect in rects:
+    normals.append(calc_normal(rect.corners[0], rect.corners[1]))
+    normals.append(calc_normal(rect.corners[1], rect.corners[2]))
+
+  overlaps = []
+  for normal in normals:
+    bounds = []
+    
+    for rect in rects:
+      bounds.append([])
+      dists = []
+      
+      for corner in rect.corners:
+        vector = project_vector(corner, normal)
+        sign = math.copysign(1, math.cos(normal)) * math.copysign(1, vector[0])
+        dist = sign * length(vector)
+        dists.append(dist)
+      bounds[-1] = [round(min(dists), 4), round(max(dists), 4)]
+      
+    if bounds[0][1] <= bounds[1][0] or bounds[1][1] <= bounds[0][0]:
+      return
+    else:
+      overlaps.append(calc_overlap(bounds))
+      
+  separate(rects, normals, overlaps)
+
+def separate(rects, normals, overlaps):
+  dist = min(overlaps, key=abs)
+  angle = normals[overlaps.index(dist)]
+  
+  dx_1 = dist / 2 * math.cos(angle)
+  dy_1 = dist / 2 * math.sin(angle)
+  dx_2 = dist / 2 * math.cos(angle + math.pi)
+  dy_2 = dist / 2 * math.sin(angle + math.pi)
+  
+  rects[0].move(dx_1, dy_1)
+  rects[1].move(dx_2, dy_2)
+
+def calc_overlap(bounds):
+  middle1 = (bounds[0][0] + bounds[0][1]) / 2
+  middle2 = (bounds[1][0] + bounds[1][1]) / 2
+  sign = math.copysign(1, middle1 - middle2)
+
+  minimum = min(bounds[0][1], bounds[1][1])
+  maximum = max(bounds[0][0], bounds[1][0])
+
+  return sign * (minimum - maximum)
+
+def project_vector(p, a):
+  u = (math.cos(a), math.sin(a))
+  dot = dot_product(p, u)
+  return (dot * u[0], dot * u[1])
+
+
+def dot_product(a, b):
+  return a[0] * b[0] + a[1] * b[1]
+
+
+def calc_normal(p1, p2):
+  dx = p1[0] - p2[0]
+  dy = p1[1] - p2[1]
+  return math.atan2(dy, dx)
+
+def length(p):
+  return math.sqrt(p[0]**2 + p[1]**2)
 
 def random_float(max, min, seed_offset=0):
     random.seed(seed + seed_offset)
@@ -854,10 +928,10 @@ def hexagon_points(center_x, center_y, radius, rotation=0):
 
 def setup():
     platform = Platform(0, 0)
-    world.objects["platform"].append(platform)
+    world.objects["platforms"].append(platform)
     platform.x = player.w / 2 - platform.w / 2
     platform.y = world.highest_in_range(platform.x, platform.x + platform.w) - platform.h
-    world.object_generators["platform"].respawn["x"] = platform.x
+    world.object_generators["platforms"].respawn["x"] = platform.x
     player.platform = platform
     player.y = platform.y - player.h
 
