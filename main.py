@@ -49,6 +49,9 @@ class Player:
         self.delta_fuel = 1
 
     def draw(self):
+        if self.state == "dead":
+            return
+
         if self.delta_frame != 0 and frame_count % self.anim_speed == 0:
             self.current_frame += self.delta_frame
 
@@ -70,6 +73,9 @@ class Player:
         screen.blit(self.img, (x, y, self.w, self.h), area)
 
     def update(self):
+        if self.state == "dead" or self.state == "waiting":
+            return
+
         self.update_velocity()
         self.move()
         self.check_object_collision()
@@ -139,7 +145,7 @@ class Player:
         highest_y = world.highest_in_range(self.x, self.x + self.w)
 
         if self.y + self.h > highest_y:
-            player.die()
+            self.die()
 
     def to_platform_center(self):
         dist = center_x(self.platform) - center_x(self)
@@ -156,17 +162,17 @@ class Player:
         self.y = self.platform.y - self.h
         self.vy = 0
         self.vx = 0
-        self.state = "landed"
         self.fuel = 6
+        if self.state != "dead":
+            self.state = "landed"
 
     def die(self):
+        self.state = "dead"
+        game_window.move_to_platform(self.platform)
         particle_generator.explosion()
-        self.reset()
         self.x = center_x(self.platform) - self.w / 2
         self.delta_frame = 0
         self.current_frame = 0
-        game_window.update()
-        world.clear()
 
 
 class World:
@@ -194,12 +200,12 @@ class World:
             spring.update()
 
     def draw_terrain_layer(self, layer):
-            draw_points = [layer.draw_point(i) for i in range(len(layer.points))]
+        draw_points = [layer.draw_point(i) for i in range(len(layer.points))]
 
-            draw_points.append((display_size[0], display_size[1]))
-            draw_points.append((0, display_size[1]))
+        draw_points.append((display_size[0], display_size[1]))
+        draw_points.append((0, display_size[1]))
 
-            pygame.draw.polygon(screen, layer.color, draw_points)
+        pygame.draw.polygon(screen, layer.color, draw_points)
 
     def create_generators(self):
         self.platform_generator = ObjectGenerator(Platform, self.objects["platforms"], 500, 800)
@@ -250,20 +256,6 @@ class World:
         p2 = self.main_layer.points[index2]
         return (p2.y - p1.y) / (p2.x - p1.x) * (x - p2.x) + p2.y
 
-    def clear(self):
-        for layer in self.layers:
-            layer.points.clear()
-            layer.points.append(layer.respawn)
-            self.terrain_generator.generate_terrain(1, layer)
-
-        for key in self.objects:
-            generator = self.object_generators[key]
-            respawn = generator.respawn
-
-            self.objects[key].clear()
-            self.objects[key].append(generator.object_class(respawn["x"], respawn["seed_offset"]))
-            generator.update_dist()
-
     def set_respawn_objects(self):
         for layer in self.layers:
             layer.respawn = layer.points[0]
@@ -278,7 +270,7 @@ class TerrainGenerator:
     def __init__(self, world):
         self.world = world
 
-        self.window_offset = 50
+        self.window_offset = 60
         self.min_dist_x = 10
         self.max_dist_x = 50
         self.octaves = 4
@@ -519,8 +511,8 @@ class Spring:
         # Calculate the distance between the player and the bob
         dx = max(player.x - self.bob_x, 0, self.bob_x - (player.x + player.w))
         dy = max(player.y - self.bob_y, 0, self.bob_y - (player.y + player.h))
-        dist = math.sqrt(dx ** 2 + dy ** 2)
-        
+        dist = math.sqrt(dx**2 + dy**2)
+
         # Calculate the overlap and the normal between the player and the bob
         sign_x = 1 if player.x + player.w / 2 > self.bob_x else -1
         sign_y = 1 if player.y + player.h / 2 > self.bob_y else -1
@@ -528,7 +520,7 @@ class Spring:
         normal = math.atan2(dy * sign_y, dx * sign_x)
         move_x = overlap * math.cos(normal)
         move_y = overlap * math.sin(normal)
-        
+
         # Separate the player and the bob
         self.bob_x -= move_x / 2
         self.bob_y -= move_y / 2
@@ -536,22 +528,28 @@ class Spring:
         player.y += move_y / 2
 
         total_mass = player.mass + self.bob_mass
-        
+
         # Find the parallel and perpendicular velocity components along the normal
         player_angle = math.atan2(player.vy, player.vx)
-        player_speed = math.sqrt(player.vx ** 2 + player.vy ** 2)
+        player_speed = math.sqrt(player.vx**2 + player.vy**2)
         player_v1 = player_speed * math.cos(player_angle - normal)
         player_v2 = player_speed * math.sin(player_angle - normal)
 
         bob_angle = math.atan2(self.bob_vy, self.bob_vx)
-        bob_speed = math.sqrt(self.bob_vx ** 2 + self.bob_vy ** 2)
+        bob_speed = math.sqrt(self.bob_vx**2 + self.bob_vy**2)
         bob_v1 = bob_speed * math.cos(bob_angle - normal)
         bob_v2 = bob_speed * math.sin(bob_angle - normal)
-        
+
         # Find new parallel velocities after an elastic collision
-        new_player_v1 = player_v1 * (player.mass - self.bob_mass) / total_mass + bob_v1 * 2 * self.bob_mass / total_mass + self.min_bounce
+        new_player_v1 = (
+            player_v1 * (player.mass - self.bob_mass) / total_mass
+            + bob_v1 * 2 * self.bob_mass / total_mass
+            + self.min_bounce
+        )
         new_player_v2 = player_v2 * (1 - self.friction)
-        new_bob_v1 = bob_v1 * (self.bob_mass - player.mass) / total_mass + player_v1 * 2 * player.mass / total_mass
+        new_bob_v1 = (
+            bob_v1 * (self.bob_mass - player.mass) / total_mass + player_v1 * 2 * player.mass / total_mass
+        )
         new_bob_v2 = bob_v2 + player_v2 * self.friction
 
         # Update velocities
@@ -559,6 +557,7 @@ class Spring:
         player.vy = new_player_v1 * math.sin(normal) + new_player_v2 * math.sin(normal + math.pi / 2)
         self.bob_vx = new_bob_v1 * math.cos(normal) + new_bob_v2 * math.cos(normal + math.pi / 2)
         self.bob_vy = new_bob_v1 * math.sin(normal) + new_bob_v2 * math.sin(normal + math.pi / 2)
+
 
 class Platform:
     def __init__(self, x, seed_offset):
@@ -594,11 +593,68 @@ class GameWindow:
         self.top = 0
         self.bottom = self.top + display_size[1]
 
+        self.wait = 0.8
+        self.timer = self.wait
+        self.target = None
+        self.move_speed = None
+        self.move_angle = None
+        self.dist_function = None
+        self.move_x = None
+
     def update(self):
-        self.left = player.x - self.spacing
+        if self.target:
+            self.move()
+        else:
+            self.left = player.x - self.spacing
+            self.top = center_y(player) - display_size[1] / 2
+
         self.right = self.left + display_size[0]
-        self.top = center_y(player) - display_size[1] / 2
         self.bottom = self.left + display_size[1]
+
+    def move(self):
+        if self.timer > 0:
+            self.timer -= dt
+            return
+
+        if self.timer != float("-inf"):
+            player.reset()
+            player.state = "waiting"
+            self.timer = float("-inf")
+
+        dy = self.top - self.target[1]
+        dx = self.left - self.target[0]
+
+        if self.move_angle is None:
+            self.move_angle = math.atan2(dy, dx)
+        if self.dist_function is None:
+            dist = math.sqrt(dy**2 + dx**2)
+            self.move_x = (dist / self.move_speed) ** (1 / 4)
+            self.dist_function = lambda x: self.move_speed * x**4
+
+        new_dist = self.dist_function(self.move_x)
+        self.left = self.target[0] + new_dist * math.cos(self.move_angle)
+        self.top = self.target[1] + new_dist * math.sin(self.move_angle)
+
+        self.move_x -= dt
+
+        if self.move_x < 0.2:
+            player.state = "landed"
+            self.timer = self.wait
+            self.target = None
+            self.move_speed = None
+            self.move_angle = None
+            self.dist_function = None
+            self.move_x = None
+
+    def move_to_platform(self, platform):
+        target_x = platform.x + platform.w / 2 - player.w / 2 - self.spacing
+        target_y = platform.y - player.h / 2 - display_size[1] / 2
+        self.target = (target_x, target_y)
+
+        dx = target_x - self.left
+        dy = target_y - self.top
+        dist = math.sqrt(dx**2 + dy**2)
+        self.move_speed = dist * 0.2
 
 
 class Mouse:
@@ -825,81 +881,87 @@ def check_rr_collision(rect1, rect2):
 def check_cr_collision(rect, circle):
     dx = max(rect[0] - circle[0], 0, circle[0] - (rect[0] + rect[2]))
     dy = max(rect[1] - circle[1], 0, circle[1] - (rect[1] + rect[3]))
-    dist = math.sqrt(dx ** 2 + dy ** 2)
+    dist = math.sqrt(dx**2 + dy**2)
 
     if dist < circle[2]:
         return True
     return False
 
-def sat(rect1, rect2):
-  rects = [rect1, rect2]
-  
-  normals = []
-  for rect in rects:
-    normals.append(calc_normal(rect.corners[0], rect.corners[1]))
-    normals.append(calc_normal(rect.corners[1], rect.corners[2]))
 
-  overlaps = []
-  for normal in normals:
-    bounds = []
-    
+def sat(rect1, rect2):
+    rects = [rect1, rect2]
+
+    normals = []
     for rect in rects:
-      bounds.append([])
-      dists = []
-      
-      for corner in rect.corners:
-        vector = project_vector(corner, normal)
-        sign = math.copysign(1, math.cos(normal)) * math.copysign(1, vector[0])
-        dist = sign * length(vector)
-        dists.append(dist)
-      bounds[-1] = [round(min(dists), 4), round(max(dists), 4)]
-      
-    if bounds[0][1] <= bounds[1][0] or bounds[1][1] <= bounds[0][0]:
-      return
-    else:
-      overlaps.append(calc_overlap(bounds))
-      
-  separate(rects, normals, overlaps)
+        normals.append(calc_normal(rect.corners[0], rect.corners[1]))
+        normals.append(calc_normal(rect.corners[1], rect.corners[2]))
+
+    overlaps = []
+    for normal in normals:
+        bounds = []
+
+        for rect in rects:
+            bounds.append([])
+            dists = []
+
+            for corner in rect.corners:
+                vector = project_vector(corner, normal)
+                sign = math.copysign(1, math.cos(normal)) * math.copysign(1, vector[0])
+                dist = sign * length(vector)
+                dists.append(dist)
+            bounds[-1] = [round(min(dists), 4), round(max(dists), 4)]
+
+        if bounds[0][1] <= bounds[1][0] or bounds[1][1] <= bounds[0][0]:
+            return
+        else:
+            overlaps.append(calc_overlap(bounds))
+
+    separate(rects, normals, overlaps)
+
 
 def separate(rects, normals, overlaps):
-  dist = min(overlaps, key=abs)
-  angle = normals[overlaps.index(dist)]
-  
-  dx_1 = dist / 2 * math.cos(angle)
-  dy_1 = dist / 2 * math.sin(angle)
-  dx_2 = dist / 2 * math.cos(angle + math.pi)
-  dy_2 = dist / 2 * math.sin(angle + math.pi)
-  
-  rects[0].move(dx_1, dy_1)
-  rects[1].move(dx_2, dy_2)
+    dist = min(overlaps, key=abs)
+    angle = normals[overlaps.index(dist)]
+
+    dx_1 = dist / 2 * math.cos(angle)
+    dy_1 = dist / 2 * math.sin(angle)
+    dx_2 = dist / 2 * math.cos(angle + math.pi)
+    dy_2 = dist / 2 * math.sin(angle + math.pi)
+
+    rects[0].move(dx_1, dy_1)
+    rects[1].move(dx_2, dy_2)
+
 
 def calc_overlap(bounds):
-  middle1 = (bounds[0][0] + bounds[0][1]) / 2
-  middle2 = (bounds[1][0] + bounds[1][1]) / 2
-  sign = math.copysign(1, middle1 - middle2)
+    middle1 = (bounds[0][0] + bounds[0][1]) / 2
+    middle2 = (bounds[1][0] + bounds[1][1]) / 2
+    sign = math.copysign(1, middle1 - middle2)
 
-  minimum = min(bounds[0][1], bounds[1][1])
-  maximum = max(bounds[0][0], bounds[1][0])
+    minimum = min(bounds[0][1], bounds[1][1])
+    maximum = max(bounds[0][0], bounds[1][0])
 
-  return sign * (minimum - maximum)
+    return sign * (minimum - maximum)
+
 
 def project_vector(p, a):
-  u = (math.cos(a), math.sin(a))
-  dot = dot_product(p, u)
-  return (dot * u[0], dot * u[1])
+    u = (math.cos(a), math.sin(a))
+    dot = dot_product(p, u)
+    return (dot * u[0], dot * u[1])
 
 
 def dot_product(a, b):
-  return a[0] * b[0] + a[1] * b[1]
+    return a[0] * b[0] + a[1] * b[1]
 
 
 def calc_normal(p1, p2):
-  dx = p1[0] - p2[0]
-  dy = p1[1] - p2[1]
-  return math.atan2(dy, dx)
+    dx = p1[0] - p2[0]
+    dy = p1[1] - p2[1]
+    return math.atan2(dy, dx)
+
 
 def length(p):
-  return math.sqrt(p[0]**2 + p[1]**2)
+    return math.sqrt(p[0] ** 2 + p[1] ** 2)
+
 
 def random_float(max, min, seed_offset=0):
     random.seed(seed + seed_offset)
