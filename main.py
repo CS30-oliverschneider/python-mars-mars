@@ -13,22 +13,22 @@ class Player:
     def __init__(self):
         self.x = 0
         self.y = 0
-        self.w = 40
+        self.w = 28
         self.h = 40
 
         self.mass = 1
 
+        self.pieces = []
         self.img = pygame.image.load("img/spritesheet.png")
-        self.img_x = 0
+        self.img_x = 4
         self.img_y = 0
-        self.img_w = self.w
-        self.img_h = self.h
 
         self.frame_width = 40
         self.frame_height = 40
-        self.anim_speed = 3
+        self.anim_speed = 0.05
         self.current_frame = 0
         self.delta_frame = 0
+        self.frame_timer = self.anim_speed
 
         self.platform = None
         self.slide_speed = 2
@@ -49,10 +49,15 @@ class Player:
         self.delta_fuel = 1
 
     def draw(self):
+        for piece in self.pieces:
+            piece.draw()
+
         if self.state == "dead":
             return
 
-        if self.delta_frame != 0 and frame_count % self.anim_speed == 0:
+        self.frame_timer -= dt
+        if self.delta_frame != 0 and self.frame_timer <= 0:
+            self.frame_timer = self.anim_speed
             self.current_frame += self.delta_frame
 
             if self.current_frame <= 0:
@@ -70,9 +75,15 @@ class Player:
             self.frame_width,
             self.frame_height,
         )
-        screen.blit(self.img, (x, y, self.w, self.h), area)
+        screen.blit(self.img, (x, y), area)
+
+        for piece in self.pieces:
+            piece.draw()
 
     def update(self):
+        for piece in self.pieces:
+            piece.update()
+
         if self.state == "dead" or self.state == "waiting":
             return
 
@@ -170,6 +181,9 @@ class Player:
             if direction * center_x(self) > direction * center_x(self.platform):
                 self.x = center_x(self.platform) - self.w / 2
 
+    def create_pieces(self):
+        self.pieces = [PlayerPiece(x, self.x, self.y) for x in range(6)]
+
     def reset(self):
         self.y = self.platform.y - self.h
         self.vy = 0
@@ -180,11 +194,59 @@ class Player:
 
     def die(self):
         self.state = "dead"
+        player.create_pieces()
         game_window.move_to_platform(self.platform)
         particle_generator.explosion()
         self.x = center_x(self.platform) - self.w / 2
         self.delta_frame = 0
         self.current_frame = 0
+
+
+class PlayerPiece:
+    def __init__(self, index, x, y):
+        img_num = index + 1 if index != 5 else 5
+        self.img = pygame.image.load(f"img/piece-{img_num}.png")
+        self.x = 200
+        self.y = 200
+        self.angle = 0
+        self.rotation = [-1, 1][random.randint(0, 1)] * random.uniform(50, 500)
+        self.vx = [-1, 1][random.randint(0, 1)] * random.uniform(0, 100)
+        self.vy = [-1, 1][random.randint(0, 1)] * random.uniform(50, 100)
+
+        if index == 0:
+            self.x = x
+            self.y = y
+        elif index == 1:
+            self.x = x - 4
+            self.y = y + 20
+        elif index == 2:
+            self.x = x
+            self.y = y + 20
+        elif index == 3:
+            self.x = x + 32
+            self.y = y + 20
+        elif index == 4:
+            self.x = x + 4
+            self.y = y + 36
+        elif index == 5:
+            self.x = x + 20
+            self.y = y + 36
+
+    def draw(self):
+        if self.y > display_size[1]:
+            player.pieces.remove(self)
+            return
+
+        pos = (self.x - game_window.left, self.y - game_window.top)
+        rotated_image = pygame.transform.rotate(self.img, self.angle).convert_alpha()
+        new_rect = rotated_image.get_rect(center=self.img.get_rect(topleft=pos).center)
+        screen.blit(rotated_image, new_rect)
+
+    def update(self):
+        self.vy += gravity * dt
+        self.x += self.vx * dt
+        self.y += self.vy * dt
+        self.angle += self.rotation * dt
 
 
 class World:
@@ -1072,7 +1134,6 @@ gravity = 150
 clock = pygame.time.Clock()
 dt = 0
 seed = random.random() * 100000
-frame_count = 0
 game_window = GameWindow()
 world = World()
 world.create_generators()
@@ -1090,7 +1151,6 @@ while running:
         if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
             player.die()
 
-    frame_count += 1
     screen.fill((140, 190, 200))
     dt = clock.tick(60) / 1000
 
