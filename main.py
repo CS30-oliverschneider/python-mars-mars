@@ -238,9 +238,8 @@ class PlayerPiece:
             return
 
         pos = (self.x - game_window.left, self.y - game_window.top)
-        rotated_image = pygame.transform.rotate(self.img, self.angle).convert_alpha()
-        new_rect = rotated_image.get_rect(center=self.img.get_rect(topleft=pos).center)
-        screen.blit(rotated_image, new_rect)
+        center = self.img.get_rect(topleft=pos).center
+        screen.blit(*rotate_image(self.img, center, self.angle))
 
     def update(self):
         self.vy += gravity * dt
@@ -605,8 +604,9 @@ class Spring:
 
 class Block:
     def __init__(self, x, seed_offset):
-        self.rotated_w = 80
-        self.rotated_h = 40
+        self.img = pygame.image.load("img/cow.png")
+        self.rotated_w = 95
+        self.rotated_h = 67
         self.min_bounce = 50
 
         points = world.main_layer.points
@@ -618,19 +618,22 @@ class Block:
         angle = math.atan2(line[1].y - line[0].y, line[1].x - line[0].x)
         self.corners = rotated_rect((line[0].x, line[0].y), self.rotated_w, self.rotated_h, angle)
 
+        self.img_x = 0
+        self.img_y = -8
+
+        center_x = (self.corners[0][0] + self.corners[2][0]) / 2 + self.img_x
+        center_y = (self.corners[0][1] + self.corners[2][1]) / 2 + self.img_y
+        self.img, self.rect = rotate_image(self.img, (center_x, center_y), math.degrees(-angle))
+
         self.x = x
         self.w = math.sqrt(self.rotated_w**2 + self.rotated_h**2)
 
         self.seed_offset = seed_offset
 
     def draw(self):
-        draw_corners = []
-        for corner in self.corners:
-            x = corner[0] - game_window.left
-            y = corner[1] - game_window.top
-            draw_corners.append((x, y))
-
-        pygame.draw.polygon(screen, "red", draw_corners)
+        x = self.rect.x - game_window.left
+        y = self.rect.y - game_window.top
+        screen.blit(self.img, (x, y, self.rect.w, self.rect.h))
 
     def resolve_collision(self, sat_info):
         player.x += sat_info["move_vector"][0]
@@ -1037,6 +1040,12 @@ def sat(rect1, rect2):
     move_vector = (dist * math.cos(angle), dist * math.sin(angle))
 
     return {"normal": angle, "move_vector": move_vector}
+
+
+def rotate_image(img, center, angle):
+    rotated_image = pygame.transform.rotate(img, angle)
+    new_rect = rotated_image.get_rect(center=center)
+    return rotated_image, new_rect
 
 
 def calc_overlap(bounds):
