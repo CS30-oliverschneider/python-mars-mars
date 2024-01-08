@@ -609,21 +609,14 @@ class Block:
         self.rotated_h = 67
         self.min_bounce = 50
 
-        points = world.main_layer.points
-        for i in range(len(points)):
-            if points[i].x > x:
-                line = [points[i], points[i + 1]]
-                break
-
-        angle = math.atan2(line[1].y - line[0].y, line[1].x - line[0].x)
-        self.corners = rotated_rect((line[0].x, line[0].y), self.rotated_w, self.rotated_h, angle)
+        self.calculate_corners(x)
 
         self.img_x = 0
         self.img_y = -8
 
         center_x = (self.corners[0][0] + self.corners[2][0]) / 2 + self.img_x
         center_y = (self.corners[0][1] + self.corners[2][1]) / 2 + self.img_y
-        self.img, self.rect = rotate_image(self.img, (center_x, center_y), math.degrees(-angle))
+        self.img, self.rect = rotate_image(self.img, (center_x, center_y), math.degrees(-self.angle))
 
         self.x = x
         self.w = math.sqrt(self.rotated_w**2 + self.rotated_h**2)
@@ -631,14 +624,37 @@ class Block:
         self.seed_offset = seed_offset
 
     def draw(self):
-        x = self.rect.x - game_window.left
-        y = self.rect.y - game_window.top
-        screen.blit(self.img, (x, y, self.rect.w, self.rect.h))
+        # x = self.rect.x - game_window.left
+        # y = self.rect.y - game_window.top
+        # screen.blit(self.img, (x, y, self.rect.w, self.rect.h))
+
+        draw_corners = [(corner[0] - game_window.left, corner[1] - game_window.top) for corner in self.corners]
+        pygame.draw.polygon(screen, "red", draw_corners)
+
+        pygame.draw.line(screen, "green", self.p1, self.p2)
 
     def resolve_collision(self, sat_info):
         player.x += sat_info["move_vector"][0]
         player.y += sat_info["move_vector"][1]
         bounce_off(player, sat_info["normal"], self.min_bounce)
+
+    def calculate_corners(self, x):
+        points = world.main_layer.points
+        for i in range(len(points)):
+            if points[i].x > x:
+                p1 = points[i]
+                p2 = points[i + 1]
+                start_index = i
+                break
+
+        for i in range(start_index, len(points)):
+            if points[i].x > x + self.rotated_w:
+                self.p1 = (points[i].x, points[i].y)
+                self.p2 = (points[i - 1].x, points[i - 1].y)
+                break
+        
+        self.angle = math.atan2(p2.y - p1.y, p2.x - p1.x)
+        self.corners = rotated_rect((p1.x, p1.y), self.rotated_w, self.rotated_h, self.angle)
 
 
 class Platform:
