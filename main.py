@@ -283,7 +283,7 @@ class World:
     def create_generators(self):
         platform_generator = ObjectGenerator(0, Platform, self.objects["platforms"], 1000, 1500)
         spring_generator = ObjectGenerator(1, Spring, self.objects["springs"], 1000, 1500)
-        block_generator = ObjectGenerator(2, Block, self.objects["blocks"], 1000, 1500)
+        block_generator = ObjectGenerator(2, Block, self.objects["blocks"], 800, 1500)
 
         self.object_generators = {
             "platforms": platform_generator,
@@ -631,7 +631,17 @@ class Block:
         draw_corners = [(corner[0] - game_window.left, corner[1] - game_window.top) for corner in self.corners]
         pygame.draw.polygon(screen, "red", draw_corners)
 
-        pygame.draw.line(screen, "green", self.p1, self.p2)
+        start = (self.p1[0] - game_window.left, self.p1[1] - game_window.top)
+        end = (self.p2[0] - game_window.left, self.p2[1] - game_window.top)
+        pygame.draw.line(screen, "green", start, end)
+
+        def draw_point(point):
+            x = point[0] - game_window.left
+            y = point[1] - game_window.top
+            return (x, y)
+
+        pygame.draw.circle(screen, "white", draw_point(self.bl), 5)
+        # pygame.draw.circle(screen, "white", draw_point(self.br), 5)
 
     def resolve_collision(self, sat_info):
         player.x += sat_info["move_vector"][0]
@@ -639,22 +649,47 @@ class Block:
         bounce_off(player, sat_info["normal"], self.min_bounce)
 
     def calculate_corners(self, x):
+        self.bl = (x, world.highest_in_range(x, x))
+
         points = world.main_layer.points
         for i in range(len(points)):
-            if points[i].x > x:
-                p1 = points[i]
-                p2 = points[i + 1]
-                start_index = i
-                break
-
-        for i in range(start_index, len(points)):
             if points[i].x > x + self.rotated_w:
-                self.p1 = (points[i].x, points[i].y)
-                self.p2 = (points[i - 1].x, points[i - 1].y)
+                dx = points[i - 1].x - self.bl[0]
+                dy = points[i - 1].y - self.bl[1]
+                dist = math.sqrt(dx ** 2 + dy ** 2)
+                if dist < self.rotated_w:
+                    index = i
+                else:
+                    index = i - 1
+
+                self.p1 = (points[index - 1].x, points[index - 1].y)
+                self.p2 = (points[index].x, points[index].y)
+
                 break
         
-        self.angle = math.atan2(p2.y - p1.y, p2.x - p1.x)
-        self.corners = rotated_rect((p1.x, p1.y), self.rotated_w, self.rotated_h, self.angle)
+        self.angle = self.find_angle(self.bl, self.p1, self.p2)
+        self.corners = rotated_rect(self.bl, self.rotated_w, self.rotated_h, self.angle)
+
+    def find_angle(self, corner, p1, p2):
+        # equation of a line y = mx + c
+        slope = (p1[1] - p2[1]) / (p1[0] - p2[0])
+        constant = p2[1] - slope * p2[0]
+
+        # calculate variables for quadratic formula
+        a = 1 + slope**2
+        b = 2 * (slope * constant - corner[0] - slope * corner[1])
+        c = corner[0] ** 2 + corner[1] ** 2 + constant ** 2 - self.rotated_w ** 2 - 2 * constant * corner[1]
+
+        # find solutions using quadratic formula
+        x1 = (-b + math.sqrt(b ** 2 - 4 * a * c)) / (2 * a)
+        x2 = (-b - math.sqrt(b ** 2 - 4 * a * c)) / (2 * a)
+
+        if p1[0] <= x1 <= p2[0]:
+            solution = (x1, slope * x1 + constant)
+        elif p1[0] <= x2 <= p2[0]:
+            solution = (x2, slope * x2 + constant)
+
+        return math.atan2(solution[1] - corner[1], solution[0] - corner[0])
 
 
 class Platform:
