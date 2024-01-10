@@ -337,7 +337,7 @@ class TerrainGenerator:
     def __init__(self, world):
         self.world = world
 
-        self.window_offset = 60
+        self.window_offset = 100
         self.min_dist_x = 10
         self.max_dist_x = 50
 
@@ -628,20 +628,10 @@ class Block:
         # y = self.rect.y - game_window.top
         # screen.blit(self.img, (x, y, self.rect.w, self.rect.h))
 
-        draw_corners = [(corner[0] - game_window.left, corner[1] - game_window.top) for corner in self.corners]
+        draw_corners = [
+            (corner[0] - game_window.left, corner[1] - game_window.top) for corner in self.corners
+        ]
         pygame.draw.polygon(screen, "red", draw_corners)
-
-        start = (self.p1[0] - game_window.left, self.p1[1] - game_window.top)
-        end = (self.p2[0] - game_window.left, self.p2[1] - game_window.top)
-        pygame.draw.line(screen, "green", start, end)
-
-        def draw_point(point):
-            x = point[0] - game_window.left
-            y = point[1] - game_window.top
-            return (x, y)
-
-        pygame.draw.circle(screen, "white", draw_point(self.bl), 5)
-        # pygame.draw.circle(screen, "white", draw_point(self.br), 5)
 
     def resolve_collision(self, sat_info):
         player.x += sat_info["move_vector"][0]
@@ -654,19 +644,19 @@ class Block:
         points = world.main_layer.points
         for i in range(len(points)):
             if points[i].x > x + self.rotated_w:
-                dx = points[i - 1].x - self.bl[0]
-                dy = points[i - 1].y - self.bl[1]
-                dist = math.sqrt(dx ** 2 + dy ** 2)
-                if dist < self.rotated_w:
-                    index = i
-                else:
-                    index = i - 1
+                index = i + 1
+                dist = float("inf")
+
+                while dist > self.rotated_w:
+                    index -= 1
+                    dx = points[index - 1].x - self.bl[0]
+                    dy = points[index - 1].y - self.bl[1]
+                    dist = math.sqrt(dx**2 + dy**2)
 
                 self.p1 = (points[index - 1].x, points[index - 1].y)
                 self.p2 = (points[index].x, points[index].y)
-
                 break
-        
+
         self.angle = self.find_angle(self.bl, self.p1, self.p2)
         self.corners = rotated_rect(self.bl, self.rotated_w, self.rotated_h, self.angle)
 
@@ -678,11 +668,11 @@ class Block:
         # calculate variables for quadratic formula
         a = 1 + slope**2
         b = 2 * (slope * constant - corner[0] - slope * corner[1])
-        c = corner[0] ** 2 + corner[1] ** 2 + constant ** 2 - self.rotated_w ** 2 - 2 * constant * corner[1]
+        c = corner[0] ** 2 + corner[1] ** 2 + constant**2 - self.rotated_w**2 - 2 * constant * corner[1]
 
         # find solutions using quadratic formula
-        x1 = (-b + math.sqrt(b ** 2 - 4 * a * c)) / (2 * a)
-        x2 = (-b - math.sqrt(b ** 2 - 4 * a * c)) / (2 * a)
+        x1 = (-b + math.sqrt(b**2 - 4 * a * c)) / (2 * a)
+        x2 = (-b - math.sqrt(b**2 - 4 * a * c)) / (2 * a)
 
         if p1[0] <= x1 <= p2[0]:
             solution = (x1, slope * x1 + constant)
