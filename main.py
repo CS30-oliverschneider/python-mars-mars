@@ -337,7 +337,7 @@ class TerrainGenerator:
     def __init__(self, world):
         self.world = world
 
-        self.window_offset = 100
+        self.window_offset = 185
         self.min_dist_x = 10
         self.max_dist_x = 50
 
@@ -605,33 +605,33 @@ class Spring:
 class Block:
     def __init__(self, x, seed_offset):
         self.img = pygame.image.load("img/cow.png")
-        self.rotated_w = 95
-        self.rotated_h = 67
+        self.rotated_w = 65
+        self.rotated_h = 54
         self.min_bounce = 50
 
-        self.calculate_corners(x)
+        self.calculate_corners(x + self.rotated_h)
 
-        self.img_x = 0
-        self.img_y = -8
+        self.img_x = 5
+        self.img_y = -3
 
         center_x = (self.corners[0][0] + self.corners[2][0]) / 2 + self.img_x
         center_y = (self.corners[0][1] + self.corners[2][1]) / 2 + self.img_y
         self.img, self.rect = rotate_image(self.img, (center_x, center_y), math.degrees(-self.angle))
 
         self.x = x
-        self.w = math.sqrt(self.rotated_w**2 + self.rotated_h**2)
+        self.w = math.sqrt(self.rotated_w**2 + self.rotated_h**2) + self.rotated_h
 
         self.seed_offset = seed_offset
 
     def draw(self):
-        # x = self.rect.x - game_window.left
-        # y = self.rect.y - game_window.top
-        # screen.blit(self.img, (x, y, self.rect.w, self.rect.h))
+        x = self.rect.x - game_window.left
+        y = self.rect.y - game_window.top
+        screen.blit(self.img, (x, y))
 
         draw_corners = [
             (corner[0] - game_window.left, corner[1] - game_window.top) for corner in self.corners
         ]
-        pygame.draw.polygon(screen, "red", draw_corners)
+        pygame.draw.polygon(screen, "red", draw_corners, 1)
 
     def resolve_collision(self, sat_info):
         player.x += sat_info["move_vector"][0]
