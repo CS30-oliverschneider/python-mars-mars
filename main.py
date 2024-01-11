@@ -636,10 +636,11 @@ class Block:
     def resolve_collision(self, sat_info):
         player.x += sat_info["move_vector"][0]
         player.y += sat_info["move_vector"][1]
+
         bounce_off(player, sat_info["normal"], self.min_bounce)
 
     def calculate_corners(self, x):
-        self.bl = (x, world.highest_in_range(x, x))
+        bottom_left = (x, world.highest_in_range(x, x))
 
         points = world.main_layer.points
         for i in range(len(points)):
@@ -649,16 +650,16 @@ class Block:
 
                 while dist > self.rotated_w:
                     index -= 1
-                    dx = points[index - 1].x - self.bl[0]
-                    dy = points[index - 1].y - self.bl[1]
+                    dx = points[index - 1].x - bottom_left[0]
+                    dy = points[index - 1].y - bottom_left[1]
                     dist = math.sqrt(dx**2 + dy**2)
 
                 self.p1 = (points[index - 1].x, points[index - 1].y)
                 self.p2 = (points[index].x, points[index].y)
                 break
 
-        self.angle = self.find_angle(self.bl, self.p1, self.p2)
-        self.corners = rotated_rect(self.bl, self.rotated_w, self.rotated_h, self.angle)
+        self.angle = self.find_angle(bottom_left, self.p1, self.p2)
+        self.corners = rotated_rect(bottom_left, self.rotated_w, self.rotated_h, self.angle)
 
     def find_angle(self, corner, p1, p2):
         # equation of a line y = mx + c
@@ -1076,8 +1077,9 @@ def sat(rect1, rect2):
         else:
             overlaps.append(calc_overlap(bounds))
 
-    dist = min(overlaps, key=abs)
-    angle = normals[overlaps.index(dist)]
+    overlap = min(overlaps, key=abs)
+    dist = abs(overlap)
+    angle = normals[overlaps.index(overlap)] + (math.pi if overlap < 0 else 0)
     move_vector = (dist * math.cos(angle), dist * math.sin(angle))
 
     return {"normal": angle, "move_vector": move_vector}
