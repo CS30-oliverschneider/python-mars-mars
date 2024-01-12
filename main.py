@@ -512,7 +512,8 @@ class Spring:
     def __init__(self, x, seed_offset):
         self.x = x
         self.seed_offset = seed_offset
-
+        
+        self.img = pygame.image.load("img/bob.png")
         self.stop_length = 200
         self.line_width = 5
         self.bob_r = 30
@@ -545,8 +546,9 @@ class Spring:
         bob_x = self.bob_x - game_window.left
         bob_y = self.bob_y - game_window.top
 
-        pygame.draw.line(screen, "blue", (anchor_x, anchor_y), (bob_x, bob_y), self.line_width)
-        pygame.draw.circle(screen, "blue", (bob_x, bob_y), self.bob_r)
+        pygame.draw.line(screen, "#944c01", (anchor_x, anchor_y), (bob_x, bob_y), self.line_width)
+        # pygame.draw.ciircle(screen, "#f0991a", (bob_x, bob_y), self.bob_r)
+        screen.blit(self.img, (bob_x - self.bob_r, bob_y - self.bob_r))
 
     def update(self):
         self.update_velocity()
@@ -628,10 +630,10 @@ class Block:
         y = self.rect.y - game_window.top
         screen.blit(self.img, (x, y))
 
-        draw_corners = [
-            (corner[0] - game_window.left, corner[1] - game_window.top) for corner in self.corners
-        ]
-        pygame.draw.polygon(screen, "red", draw_corners, 1)
+        # draw_corners = [
+        #     (corner[0] - game_window.left, corner[1] - game_window.top) for corner in self.corners
+        # ]
+        # pygame.draw.polygon(screen, "red", draw_corners, 1)
 
     def resolve_collision(self, sat_info):
         player.x += sat_info["move_vector"][0]
