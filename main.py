@@ -259,11 +259,14 @@ class World:
 
     def draw(self):
         for layer in reversed(self.layers):
-            self.draw_terrain_layer(layer)
+            if layer is not self.main_layer:
+                self.draw_terrain_layer(layer)
 
         for object_list in self.objects.values():
             for game_object in object_list:
                 game_object.draw()
+
+        self.draw_terrain_layer(self.main_layer)
 
     def update(self):
         self.terrain_generator.update()
@@ -546,8 +549,8 @@ class Spring:
         bob_x = self.bob_x - game_window.left
         bob_y = self.bob_y - game_window.top
 
-        pygame.draw.line(screen, "#944c01", (anchor_x, anchor_y), (bob_x, bob_y), self.line_width)
-        # pygame.draw.ciircle(screen, "#f0991a", (bob_x, bob_y), self.bob_r)
+        pygame.draw.line(screen, "#974e01", (anchor_x, anchor_y), (bob_x, bob_y), self.line_width)
+        # pygame.draw.circle(screen, "#f0991a", (bob_x, bob_y), self.bob_r)
         screen.blit(self.img, (bob_x - self.bob_r, bob_y - self.bob_r))
 
     def update(self):
@@ -691,20 +694,25 @@ class Platform:
         self.h = 10
         self.x = x
         self.y = world.highest_in_range(self.x, self.x + self.w) - self.h
+        self.img = pygame.image.load('img/platform.png')
+        self.img_x = 0
+        self.img_y = -32
 
         self.seed_offset = seed_offset
 
     def draw(self):
-        pygame.draw.rect(
-            screen,
-            "green",
-            (self.x - game_window.left, self.y - game_window.top, self.w, self.h),
-        )
+        x = self.x + self.img_x - game_window.left
+        y = self.y + self.img_y - game_window.top
+        screen.blit(self.img, (x, y))
+
 
     def resolve_collision(self):
         if player.vy > player.max_landing_speed:
-            return player.die()
+            player.die()
+            hud.platform_streak.add_to_streak()
+            return
 
+        hud.platform_streak.update_streak(0)
         player.platform = self
         player.delta_frame = -1
         player.reset()
@@ -799,9 +807,10 @@ class Mouse:
 
 class HUD:
     def __init__(self):
-        self.fuel = FuelMeter()
+        self.fuel_meter = FuelMeter()
+        self.platform_streak = PlatformStreak()
 
-        self.elements = [self.fuel]
+        self.elements = [self.fuel_meter, self.platform_streak]
 
     def draw(self):
         for element in self.elements:
@@ -810,6 +819,89 @@ class HUD:
     def update(self):
         for element in self.elements:
             element.update()
+
+class FuelMeter:
+    def __init__(self):
+        self.x = 50
+        self.y = 50
+        self.img = pygame.image.load("./img/fuel.png")
+        self.fuel_x = -19
+        self.fuel_y = -18
+
+    def draw(self):
+        screen.blit(self.img, (self.x + self.fuel_x, self.y + self.fuel_y))
+
+        big_hex = hexagon_points(self.x, self.y, 38)
+        small_hex = hexagon_points(self.x, self.y, 30)
+
+        pygame.draw.polygon(screen, "white", big_hex, 1)
+        pygame.draw.polygon(screen, "white", small_hex, 1)
+        self.draw_bar(big_hex, small_hex)
+
+    def draw_bar(self, big_hex, small_hex):
+        for n in range(6):
+            index1 = n
+            index2 = (n + 1) % 6
+
+            if math.floor(player.fuel) < 5 - n:
+                continue
+            elif math.floor(player.fuel) == 5 - n:
+                if player.fuel % 1 <= 0:
+                    continue
+
+                width = 1 - (player.fuel % 1)
+
+                def between_points(p1, p2):
+                    x = p1[0] + (p2[0] - p1[0]) * width
+                    y = p1[1] + (p2[1] - p1[1]) * width
+                    return (x, y)
+
+                big_hex_point = between_points(big_hex[index1], big_hex[index2])
+                small_hex_point = between_points(small_hex[index1], small_hex[index2])
+
+                points = [
+                    big_hex_point,
+                    big_hex[index2],
+                    small_hex[index2],
+                    small_hex_point,
+                ]
+            else:
+                points = [
+                    big_hex[index1],
+                    big_hex[index2],
+                    small_hex[index2],
+                    small_hex[index1],
+                ]
+
+            pygame.draw.polygon(screen, "white", points)
+
+class PlatformStreak:
+    def __init__(self):
+        self.x = 110
+        self.y = 85
+        self.streak_num = 0
+
+        self.update_streak(0)
+
+        big_hex = hexagon_points(self.x, self.y, 38)
+        small_hex = hexagon_points(self.x, self.y, 30)
+        self.hex = [*big_hex, big_hex[0], *small_hex, small_hex[0]]
+
+    def draw(self):
+        pygame.draw.polygon(screen, "white", self.hex)
+        screen.blit(self.text, self.text_rect)
+    
+    def update(self):
+        pass
+
+    def update_streak(self, num):
+        self.text = font.render(str(num), True, "white")
+        self.text_rect = self.text.get_rect()
+        self.text_rect.center = (self.x, self.y)
+
+    def add_to_streak(self):
+        self.streak_num += 1
+        self.update_streak(self.streak_num)
 
 
 class ParticleGenerator:
@@ -937,61 +1029,6 @@ class Particle:
             return particles.remove(self)
 
         self.time += dt
-
-
-class FuelMeter:
-    def __init__(self):
-        self.x = 30
-        self.y = 30
-        self.img = pygame.image.load("./img/fuel.png")
-
-    def draw(self):
-        screen.blit(self.img, (self.x, self.y))
-
-        center = (self.x + 18, self.y + 17)
-        big_hex = hexagon_points(center[0], center[1], 38)
-        small_hex = hexagon_points(center[0], center[1], 30)
-
-        pygame.draw.polygon(screen, "white", big_hex, 1)
-        pygame.draw.polygon(screen, "white", small_hex, 1)
-        self.draw_bar(big_hex, small_hex)
-
-    def draw_bar(self, big_hex, small_hex):
-        for n in range(6):
-            index1 = n
-            index2 = (n + 1) % 6
-
-            if math.floor(player.fuel) < 5 - n:
-                continue
-            elif math.floor(player.fuel) == 5 - n:
-                if player.fuel % 1 <= 0:
-                    continue
-
-                width = 1 - (player.fuel % 1)
-
-                def between_points(p1, p2):
-                    x = p1[0] + (p2[0] - p1[0]) * width
-                    y = p1[1] + (p2[1] - p1[1]) * width
-                    return (x, y)
-
-                big_hex_point = between_points(big_hex[index1], big_hex[index2])
-                small_hex_point = between_points(small_hex[index1], small_hex[index2])
-
-                points = [
-                    big_hex_point,
-                    big_hex[index2],
-                    small_hex[index2],
-                    small_hex_point,
-                ]
-            else:
-                points = [
-                    big_hex[index1],
-                    big_hex[index2],
-                    small_hex[index2],
-                    small_hex[index1],
-                ]
-
-            pygame.draw.polygon(screen, "white", points)
 
 
 def check_rr_collision(rect1, rect2):
@@ -1182,6 +1219,7 @@ def setup():
 
 
 # Global Variables
+font = pygame.font.Font('freesansbold.ttf', 32)
 hud = HUD()
 mouse = Mouse()
 gravity = 150
