@@ -46,7 +46,7 @@ class Player:
         self.launch_speed_y = -300
 
         self.fuel = 6
-        self.delta_fuel = 1
+        self.delta_fuel = 3
 
     def draw(self):
         for piece in self.pieces:
@@ -149,18 +149,25 @@ class Player:
             if check_cr_collision(player_rect, spring_circle):
                 spring.resolve_collision()
 
-        for block in world.objects["blocks"]:
+        for cow in world.objects["cows"]:
             player_p1 = (player.x, player.y)
             player_p2 = (player.x + player.w, player.y)
             player_p3 = (player.x + player.w, player.y + player.h)
             player_p4 = (player.x, player.y + player.h)
             player_rect = [player_p1, player_p2, player_p3, player_p4]
 
-            block_rect = block.corners
+            cow_rect1 = cow.corners1
+            cow_rect2 = cow.corners2
 
-            sat_info = sat(player_rect, block_rect)
+            sat_info = sat(player_rect, cow_rect1)
             if sat_info:
-                block.resolve_collision(sat_info)
+                cow.resolve_collision(sat_info)
+                return
+
+            sat_info = sat(player_rect, cow_rect2)
+            if sat_info:
+                cow.resolve_collision(sat_info)
+                return
 
     def check_terrain_collision(self):
         if (self.state != "launched" and self.state != "flying") or world.highest > self.y + self.h:
@@ -193,6 +200,7 @@ class Player:
             self.state = "landed"
 
     def die(self):
+        hud.platform_streak.update_streak(0)
         self.state = "dead"
         player.create_pieces()
         game_window.move_to_platform(self.platform)
@@ -255,7 +263,7 @@ class World:
         self.create_layers()
         self.terrain_generator = TerrainGenerator(self)
 
-        self.objects = {"springs": [], "blocks": [], "platforms": []}
+        self.objects = {"springs": [], "cows": [], "platforms": []}
 
     def draw(self):
         for layer in reversed(self.layers):
@@ -285,13 +293,13 @@ class World:
 
     def create_generators(self):
         platform_generator = ObjectGenerator(0, Platform, self.objects["platforms"], 1000, 1500)
-        spring_generator = ObjectGenerator(1, Spring, self.objects["springs"], 1000, 1500)
-        block_generator = ObjectGenerator(2, Block, self.objects["blocks"], 800, 1500)
+        spring_generator = ObjectGenerator(1, Spring, self.objects["springs"], 500, 2000)
+        cow_generator = ObjectGenerator(2, Cow, self.objects["cows"], 500, 2000)
 
         self.object_generators = {
             "platforms": platform_generator,
             "springs": spring_generator,
-            "blocks": block_generator,
+            "cows": cow_generator,
         }
 
     def create_layers(self):
@@ -340,7 +348,7 @@ class TerrainGenerator:
     def __init__(self, world):
         self.world = world
 
-        self.window_offset = 185
+        self.window_offset = 210
         self.min_dist_x = 10
         self.max_dist_x = 50
 
@@ -452,7 +460,7 @@ class ObjectGenerator:
 
         self.seed_offset = index / 10
 
-        x = random_float(min_dist / 2, max_dist / 2, self.seed_offset)
+        x = random_float(min_dist, max_dist, self.seed_offset)
         self.right = {"x": x, "seed_offset": 0}
         self.left = {"x": x, "seed_offset": 0}
 
@@ -510,12 +518,28 @@ class ObjectGenerator:
         offset = self.seed_offset + self.left["seed_offset"] - 0.5
         self.dist_left = random_float(self.min_dist, self.max_dist, offset)
 
+    def check_in_platform(self, x):
+        # not used yet
+        if self.object_class is Platform:
+            for object_name in world.objects:
+                if object_name == "platforms":
+                    continue
+                for object in world.objects[object_name]:
+                    if object.x + object.w > x or object.x < x + self.object_w:
+                        print("object in platform")
+                        return False
+        else:
+            for platform in world.objects["platforms"]:
+                if x + self.object_w > platform.x or x < platform.x + platform.w:
+                    print("platform in object")
+                    return True
+
 
 class Spring:
     def __init__(self, x, seed_offset):
         self.x = x
         self.seed_offset = seed_offset
-        
+
         self.img = pygame.image.load("img/bob.png")
         self.stop_length = 200
         self.line_width = 5
@@ -550,7 +574,6 @@ class Spring:
         bob_y = self.bob_y - game_window.top
 
         pygame.draw.line(screen, "#974e01", (anchor_x, anchor_y), (bob_x, bob_y), self.line_width)
-        # pygame.draw.circle(screen, "#f0991a", (bob_x, bob_y), self.bob_r)
         screen.blit(self.img, (bob_x - self.bob_r, bob_y - self.bob_r))
 
     def update(self):
@@ -607,24 +630,38 @@ class Spring:
         elastic_collision(player, self, normal, self.min_bounce, self.friction)
 
 
-class Block:
+class Cow:
     def __init__(self, x, seed_offset):
         self.img = pygame.image.load("img/cow.png")
-        self.rotated_w = 65
-        self.rotated_h = 54
+        self.rotated_w = 70
+        self.rotated_h = 60
         self.min_bounce = 50
 
-        self.calculate_corners(x + self.rotated_h)
+        self.head_x = 66
+        self.head_y = -35
+        self.head_w = 33
+        self.head_h = 36
 
-        self.img_x = 5
-        self.img_y = -3
+        img_w = self.img.get_width()
+        img_h = self.img.get_height()
 
-        center_x = (self.corners[0][0] + self.corners[2][0]) / 2 + self.img_x
-        center_y = (self.corners[0][1] + self.corners[2][1]) / 2 + self.img_y
-        self.img, self.rect = rotate_image(self.img, (center_x, center_y), math.degrees(-self.angle))
+        self.calculate_corners(x + img_h)
+
+        self.img_x = 10
+        self.img_y = -7
+
+        center_x = (self.corners1[0][0] + self.corners1[2][0]) / 2
+        img_offset_x = self.img_x * math.cos(self.angle) + self.img_y * math.cos(self.angle + math.pi / 2)
+        img_center_x = center_x + img_offset_x
+
+        center_y = (self.corners1[0][1] + self.corners1[2][1]) / 2
+        img_offset_y = self.img_x * math.sin(self.angle) + self.img_y * math.sin(self.angle + math.pi / 2)
+        img_center_y = center_y + img_offset_y
+
+        self.img, self.rect = rotate_image(self.img, (img_center_x, img_center_y), math.degrees(-self.angle))
 
         self.x = x
-        self.w = math.sqrt(self.rotated_w**2 + self.rotated_h**2) + self.rotated_h
+        self.w = math.sqrt(img_w**2 + img_h**2) + img_h
 
         self.seed_offset = seed_offset
 
@@ -632,11 +669,6 @@ class Block:
         x = self.rect.x - game_window.left
         y = self.rect.y - game_window.top
         screen.blit(self.img, (x, y))
-
-        # draw_corners = [
-        #     (corner[0] - game_window.left, corner[1] - game_window.top) for corner in self.corners
-        # ]
-        # pygame.draw.polygon(screen, "red", draw_corners, 1)
 
     def resolve_collision(self, sat_info):
         player.x += sat_info["move_vector"][0]
@@ -664,7 +696,13 @@ class Block:
                 break
 
         self.angle = self.find_angle(bottom_left, self.p1, self.p2)
-        self.corners = rotated_rect(bottom_left, self.rotated_w, self.rotated_h, self.angle)
+        self.corners1 = rotated_rect(bottom_left, self.rotated_w, self.rotated_h, self.angle)
+
+        offset_x = self.head_x * math.cos(self.angle) + self.head_y * math.cos(self.angle + math.pi / 2)
+        head_x = bottom_left[0] + offset_x
+        offset_y = self.head_x * math.sin(self.angle) + self.head_y * math.sin(self.angle + math.pi / 2)
+        head_y = bottom_left[1] + offset_y
+        self.corners2 = rotated_rect((head_x, head_y), self.head_w, self.head_h, self.angle)
 
     def find_angle(self, corner, p1, p2):
         # equation of a line y = mx + c
@@ -690,13 +728,27 @@ class Block:
 
 class Platform:
     def __init__(self, x, seed_offset):
-        self.w = 50
-        self.h = 10
-        self.x = x
-        self.y = world.highest_in_range(self.x, self.x + self.w) - self.h
-        self.img = pygame.image.load('img/platform.png')
-        self.img_x = 0
-        self.img_y = -32
+        self.w = 77
+        self.h = 20
+        self.y_offset = 10
+
+        self.font = pygame.font.Font("freesansbold.ttf", 15)
+        self.text = self.font.render(str(seed_offset + 1), True, "white")
+        self.text_rect = self.text.get_rect()
+        self.text_offset_x = 37
+        self.text_offset_y = 12
+
+        self.set_coords(x)
+
+        self.img = pygame.image.load("img/platform.png")
+        self.img_x = -10
+        self.img_y = -54
+
+        self.light_offset_x = 82
+        self.light_offset_y = -12
+        self.light_w = 14
+        self.light_h = 14
+        self.light_colors = ("#61dec6", "#de6161")
 
         self.seed_offset = seed_offset
 
@@ -705,17 +757,32 @@ class Platform:
         y = self.y + self.img_y - game_window.top
         screen.blit(self.img, (x, y))
 
+        color_index = 0 if self.check_player_speed() else 1
+        light_rect = (x + self.light_offset_x, y + self.light_offset_y, self.light_w, self.light_h)
+        pygame.draw.rect(screen, self.light_colors[color_index], light_rect)
+
+        x = self.text_rect.x - game_window.left
+        y = self.text_rect.y - game_window.top
+        screen.blit(self.text, (x, y, self.text_rect.w, self.text_rect.h))
 
     def resolve_collision(self):
-        if player.vy > player.max_landing_speed:
+        if not self.check_player_speed():
             player.die()
-            hud.platform_streak.add_to_streak()
             return
 
-        hud.platform_streak.update_streak(0)
+        hud.platform_streak.add_to_streak()
         player.platform = self
         player.delta_frame = -1
         player.reset()
+
+    def set_coords(self, x):
+        self.x = x
+        self.y = world.highest_in_range(x, x + self.w) - self.h - self.y_offset
+        self.text_rect.center = (self.x + self.text_offset_x, self.y + self.text_offset_y)
+
+    def check_player_speed(self):
+        speed = math.sqrt(player.vy**2 + player.vx**2)
+        return speed < player.max_landing_speed
 
 
 class GameWindow:
@@ -820,6 +887,7 @@ class HUD:
         for element in self.elements:
             element.update()
 
+
 class FuelMeter:
     def __init__(self):
         self.x = 50
@@ -875,11 +943,13 @@ class FuelMeter:
 
             pygame.draw.polygon(screen, "white", points)
 
+
 class PlatformStreak:
     def __init__(self):
         self.x = 110
         self.y = 85
         self.streak_num = 0
+        self.font = pygame.font.Font("freesansbold.ttf", 32)
 
         self.update_streak(0)
 
@@ -890,14 +960,14 @@ class PlatformStreak:
     def draw(self):
         pygame.draw.polygon(screen, "white", self.hex)
         screen.blit(self.text, self.text_rect)
-    
+
     def update(self):
         pass
 
     def update_streak(self, num):
-        self.text = font.render(str(num), True, "white")
+        self.text = self.font.render(str(num), True, "white")
         self.text_rect = self.text.get_rect()
-        self.text_rect.center = (self.x, self.y)
+        self.text_rect.center = (self.x, self.y + 1)
 
     def add_to_streak(self):
         self.streak_num += 1
@@ -1207,8 +1277,7 @@ def hexagon_points(center_x, center_y, radius, rotation=0):
 def setup():
     platform = Platform(0, 0)
     world.objects["platforms"].append(platform)
-    platform.x = player.w / 2 - platform.w / 2
-    platform.y = world.highest_in_range(platform.x, platform.x + platform.w) - platform.h
+    platform.set_coords(player.w / 2 - platform.w / 2)
 
     generator = world.object_generators["platforms"]
     generator.right["x"] = platform.x
@@ -1219,7 +1288,6 @@ def setup():
 
 
 # Global Variables
-font = pygame.font.Font('freesansbold.ttf', 32)
 hud = HUD()
 mouse = Mouse()
 gravity = 150
