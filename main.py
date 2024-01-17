@@ -46,7 +46,7 @@ class Player:
         self.launch_speed_y = -300
 
         self.fuel = 6
-        self.delta_fuel = 3
+        self.delta_fuel = 2
 
     def draw(self):
         for piece in self.pieces:
@@ -1328,3 +1328,5 @@ while running:
     hud.draw()
 
     pygame.display.flip()
+
+print(f"\nseed: {seed}\n")
