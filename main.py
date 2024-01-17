@@ -450,46 +450,61 @@ class NoiseParams:
 
 
 class ObjectGenerator:
-    def __init__(self, index, object_class, objects, min_dist, max_dist):
+    def __init__(self, index, object_class, world_objects, min_dist, max_dist):
         self.object_class = object_class
-        self.objects = objects
+        self.world_objects = world_objects
         self.min_dist = min_dist
         self.max_dist = max_dist
+
+        self.objects = []
 
         self.object_w = self.object_class(0, 0).w
 
         self.seed_offset = index / 10
 
         x = random_float(min_dist, max_dist, self.seed_offset)
-        self.right = {"x": x, "seed_offset": 0}
-        self.left = {"x": x, "seed_offset": 0}
+        xr = x + random_float(min_dist, max_dist, self.seed_offset + 0.5)
+        xl = x + random_float(min_dist, max_dist, self.seed_offset - 0.5)
 
-        self.dist_right = random_float(min_dist, max_dist, self.seed_offset + 0.5)
-        self.dist_left = random_float(min_dist, max_dist, self.seed_offset - 0.5)
+        self.right = [{"x": x, "seed_offset": 0}, {"x": xr, "seed_offset": 1}]
+        self.left = [{"x": x, "seed_offset": 0}, {"x": xl, "seed_offset": -1}]
 
     def update(self):
-        self.add_objects()
+        self.update_objects()
         self.remove_objects()
 
-    def add_objects(self):
-        if self.right["x"] + self.dist_right < game_window.right:
-            new_seed_offset = self.right["seed_offset"] + 1
-            new_x = self.right["x"] + self.dist_right
-            self.objects.append(self.object_class(new_x, new_seed_offset))
-            self.update_dist()
+    def update_objects(self):
+        if self.right[1]["x"] < game_window.right:
+            self.right.pop(1)
+            self.create_object(self.right, 1, 1)
+            print(self.right)
+        # elif self.right[0]["x"] > game_window.right:
+        #     self.right[1] = self.right[0]
+        #     self.right[0] = self.create_object(self.right[0], -1)
+        #     print(self.right)
 
-        if self.left["x"] + self.object_w - self.dist_left > game_window.left:
-            new_seed_offset = self.left["seed_offset"] - 1
-            new_x = self.left["x"] - self.dist_left
-            self.objects.insert(0, self.object_class(new_x, new_seed_offset))
-            self.update_dist()
+        if self.left[1]["x"] + self.object_w < game_window.left:
+            self.left[0] = self.left[1]
+            self.left[1] = self.create_object(self.left[1], 1)
+        elif self.left[0]["x"] + self.object_w > game_window.left:
+            self.left[1] = self.left[0]
+            self.left[0] = self.create_object(self.left[0], -1)
 
-        if (
-            len(self.objects) == 0
-            and self.right["x"] + self.object_w > game_window.left
-            and self.right["x"] < game_window.right
-        ):
-            self.objects.append(self.object_class(self.right["x"], self.right["seed_offset"]))
+        # if (
+        #     len(self.objects) == 0
+        #     and self.right["x"] + self.object_w > game_window.left
+        #     and self.right["x"] < game_window.right
+        # ):
+        #     self.objects.append(self.object_class(self.right["x"], self.right["seed_offset"]))
+
+    def create_object(self, list, index, direction):
+            new_seed_offset = object["seed_offset"] + direction
+
+            dist_seed_offset = (object["seed_offset"] + new_seed_offset) / 2
+            dist = random_float(self.min_dist, self.max_dist, dist_seed_offset)
+            new_x = object["x"] + direction * dist
+
+            return {"x": new_x, "seed_offset": new_seed_offset}
 
     def remove_objects(self):
         if not len(self.objects):
@@ -1280,8 +1295,8 @@ def setup():
     platform.set_coords(player.w / 2 - platform.w / 2)
 
     generator = world.object_generators["platforms"]
-    generator.right["x"] = platform.x
-    generator.left["x"] = platform.x
+    generator.right[0]["x"] = platform.x
+    generator.left[1]["x"] = platform.x
 
     player.platform = platform
     player.y = platform.y - player.h
@@ -1328,5 +1343,3 @@ while running:
     hud.draw()
 
     pygame.display.flip()
-
-print(f"\nseed: {seed}\n")
