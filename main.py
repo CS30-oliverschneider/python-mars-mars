@@ -46,7 +46,7 @@ class Player:
         self.launch_speed_y = -300
 
         self.fuel = 6
-        self.delta_fuel = 2
+        self.delta_fuel = 2.5
 
     def draw(self):
         for piece in self.pieces:
@@ -284,7 +284,12 @@ class World:
             spring.update()
 
     def draw_terrain_layer(self, layer):
-        draw_points = [layer.draw_point(i) for i in range(len(layer.points))]
+        draw_points = []
+        for i in range(len(layer.points)):
+            draw_point = layer.draw_point(i)
+            max_dist_x = self.terrain_generator.max_dist_x
+            if -max_dist_x <= draw_point[0] <= display_size[0] + max_dist_x:
+                draw_points.append(draw_point)
 
         draw_points.append((display_size[0], display_size[1]))
         draw_points.append((0, display_size[1]))
@@ -292,9 +297,15 @@ class World:
         pygame.draw.polygon(screen, layer.color, draw_points)
 
     def create_generators(self):
-        platform_generator = ObjectGenerator(0, Platform, self.objects["platforms"], 1000, 1500)
-        spring_generator = ObjectGenerator(1, Spring, self.objects["springs"], 500, 2000)
-        cow_generator = ObjectGenerator(2, Cow, self.objects["cows"], 500, 2000)
+        platform = Platform(0, 0)
+        platform.set_coords(player.w / 2 - platform.w / 2)
+        self.objects["platforms"].append(platform)
+        player.platform = platform
+        player.y = platform.y - player.h
+
+        platform_generator = ObjectGenerator(0, Platform, self.objects["platforms"], 1000, 1500, platform.x)
+        spring_generator = ObjectGenerator(1, Spring, self.objects["springs"], 500, 2000, platform.x)
+        cow_generator = ObjectGenerator(2, Cow, self.objects["cows"], 500, 1000, platform.x)
 
         self.object_generators = {
             "platforms": platform_generator,
@@ -435,6 +446,7 @@ class TerrainLayer:
         point = self.points[index]
         x = point.x - game_window.left * self.draw_scale
         y = point.y - game_window.top * self.draw_scale
+
         return (x, y)
 
 
@@ -450,104 +462,102 @@ class NoiseParams:
 
 
 class ObjectGenerator:
-    def __init__(self, index, object_class, world_objects, min_dist, max_dist):
+    def __init__(self, index, object_class, world_objects, min_dist, max_dist, start_x):
         self.object_class = object_class
         self.world_objects = world_objects
         self.min_dist = min_dist
         self.max_dist = max_dist
 
-        self.objects = []
-
+        self.objects = {}
         self.object_w = self.object_class(0, 0).w
-
         self.seed_offset = index / 10
+        self.platform_radius = 100
 
-        x = random_float(min_dist, max_dist, self.seed_offset)
+        x = start_x if start_x else random_float(min_dist, max_dist, self.seed_offset)
         xr = x + random_float(min_dist, max_dist, self.seed_offset + 0.5)
-        xl = x + random_float(min_dist, max_dist, self.seed_offset - 0.5)
+        xl = x - random_float(min_dist, max_dist, self.seed_offset - 0.5)
 
-        self.right = [{"x": x, "seed_offset": 0}, {"x": xr, "seed_offset": 1}]
-        self.left = [{"x": x, "seed_offset": 0}, {"x": xl, "seed_offset": -1}]
+        self.right = [self.create_dict(x, 0), self.create_dict(xr, 1)]
+        self.left = [self.create_dict(xl, -1), self.create_dict(x, 0)]
 
     def update(self):
-        self.update_objects()
-        self.remove_objects()
+        for side in ["left", "right"]:
+            self.update_side(side)
+            self.update_world_objects(side)
 
-    def update_objects(self):
-        if self.right[1]["x"] < game_window.right:
-            self.right.pop(1)
-            self.create_object(self.right, 1, 1)
-            print(self.right)
-        # elif self.right[0]["x"] > game_window.right:
-        #     self.right[1] = self.right[0]
-        #     self.right[0] = self.create_object(self.right[0], -1)
-        #     print(self.right)
+    def update_side(self, side):
+        width = self.object_w if side == "left" else 0
+        side_list = getattr(self, side)
+        game_window_side = getattr(game_window, side)
 
-        if self.left[1]["x"] + self.object_w < game_window.left:
-            self.left[0] = self.left[1]
-            self.left[1] = self.create_object(self.left[1], 1)
-        elif self.left[0]["x"] + self.object_w > game_window.left:
-            self.left[1] = self.left[0]
-            self.left[0] = self.create_object(self.left[0], -1)
+        if side_list[1]["x"] + width < game_window_side:
+            self.add_side_dict(side, 1)
+        if side_list[0]["x"] + width > game_window_side:
+            self.add_side_dict(side, -1)
 
-        # if (
-        #     len(self.objects) == 0
-        #     and self.right["x"] + self.object_w > game_window.left
-        #     and self.right["x"] < game_window.right
-        # ):
-        #     self.objects.append(self.object_class(self.right["x"], self.right["seed_offset"]))
+    def update_world_objects(self, side):
+        if side == "right":
+            index_array = [0, 1]
+        elif side == "left":
+            index_array = [1, 0]
 
-    def create_object(self, list, index, direction):
-            new_seed_offset = object["seed_offset"] + direction
+        side_list = getattr(self, side)
+        inside = side_list[index_array[0]]
+        outside = side_list[index_array[1]]
+        inside_key = inside["x"]
+        outside_key = outside["x"]
 
-            dist_seed_offset = (object["seed_offset"] + new_seed_offset) / 2
-            dist = random_float(self.min_dist, self.max_dist, dist_seed_offset)
-            new_x = object["x"] + direction * dist
+        if inside_key not in self.objects and game_window.in_window(inside["x"], self.object_w):
+            no_object = inside["seed_offset"] < 1 or self.near_platform(side, inside["x"])
+            self.objects[inside_key] = None if no_object else self.create_world_object(inside)
 
-            return {"x": new_x, "seed_offset": new_seed_offset}
+        if outside_key in self.objects:
+            if self.objects[outside_key] is not None:
+                self.world_objects.remove(self.objects[outside_key])
+            self.objects.pop(outside_key)
 
-    def remove_objects(self):
-        if not len(self.objects):
-            return
+    def add_side_dict(self, side, direction):
+        side_list = getattr(self, side)
+        side_list.pop(0 if direction == 1 else 1)
+        side_dict = side_list[0]
 
-        if self.objects[-1].x > game_window.right:
-            self.objects.pop()
-            self.update_dist()
+        new_seed_offset = side_dict["seed_offset"] + direction
 
-        if not len(self.objects):
-            return
+        dist_seed_offset = (side_dict["seed_offset"] + new_seed_offset) / 2
+        dist = random_float(self.min_dist, self.max_dist, dist_seed_offset + self.seed_offset)
+        new_x = side_dict["x"] + direction * dist
 
-        if self.objects[0].x + self.objects[0].w < game_window.left:
-            self.objects.pop(0)
-            self.update_dist()
+        index = 1 if direction == 1 else 0
+        side_list.insert(index, self.create_dict(new_x, new_seed_offset))
 
-    def update_dist(self):
-        if not len(self.objects):
-            return
+    def create_dict(self, x, seed_offset):
+        return {"x": x, "seed_offset": seed_offset}
 
-        self.right = {"x": self.objects[-1].x, "seed_offset": self.objects[-1].seed_offset}
-        self.left = {"x": self.objects[0].x, "seed_offset": self.objects[0].seed_offset}
+    def create_world_object(self, object_dict):
+        new_object = self.object_class(object_dict["x"], object_dict["seed_offset"])
+        self.world_objects.append(new_object)
+        return new_object
 
-        offset = self.seed_offset + self.right["seed_offset"] + 0.5
-        self.dist_right = random_float(self.min_dist, self.max_dist, offset)
-        offset = self.seed_offset + self.left["seed_offset"] - 0.5
-        self.dist_left = random_float(self.min_dist, self.max_dist, offset)
-
-    def check_in_platform(self, x):
-        # not used yet
+    def near_platform(self, side, object_x):
         if self.object_class is Platform:
-            for object_name in world.objects:
-                if object_name == "platforms":
-                    continue
-                for object in world.objects[object_name]:
-                    if object.x + object.w > x or object.x < x + self.object_w:
-                        print("object in platform")
-                        return False
-        else:
-            for platform in world.objects["platforms"]:
-                if x + self.object_w > platform.x or x < platform.x + platform.w:
-                    print("platform in object")
-                    return True
+            return False
+
+        platform_generator = world.object_generators["platforms"]
+
+        for platform_key in platform_generator.objects:
+            if self.in_radius(object_x, float(platform_key)):
+                return True
+
+        for platform_dict in getattr(platform_generator, side):
+            if self.in_radius(object_x, platform_dict["x"]):
+                return True
+
+        return False
+
+    def in_radius(self, object_x, platform_x):
+        dist1 = abs(object_x - platform_x)
+        dist2 = abs(object_x + self.object_w - platform_x)
+        return dist1 < self.platform_radius or dist2 < self.platform_radius
 
 
 class Spring:
@@ -803,7 +813,6 @@ class Platform:
 class GameWindow:
     def __init__(self):
         self.spacing = 200
-
         self.left = -self.spacing
         self.right = self.left + display_size[0]
         self.top = 0
@@ -871,6 +880,9 @@ class GameWindow:
         dy = target_y - self.top
         dist = math.sqrt(dx**2 + dy**2)
         self.move_speed = dist * 0.2
+
+    def in_window(self, x, w):
+        return x + w > self.left and x < self.right
 
 
 class Mouse:
@@ -1289,19 +1301,6 @@ def hexagon_points(center_x, center_y, radius, rotation=0):
     return points
 
 
-def setup():
-    platform = Platform(0, 0)
-    world.objects["platforms"].append(platform)
-    platform.set_coords(player.w / 2 - platform.w / 2)
-
-    generator = world.object_generators["platforms"]
-    generator.right[0]["x"] = platform.x
-    generator.left[1]["x"] = platform.x
-
-    player.platform = platform
-    player.y = platform.y - player.h
-
-
 # Global Variables
 hud = HUD()
 mouse = Mouse()
@@ -1311,11 +1310,10 @@ dt = 0
 seed = random.random() * 100000
 game_window = GameWindow()
 world = World()
-world.create_generators()
 player = Player()
+world.create_generators()
 particle_generator = ParticleGenerator()
 particles = []
-setup()
 
 # Main Loop
 running = True
